@@ -1,6 +1,6 @@
 # GitHub 發布內容
 
-以下為可直接貼入 GitHub 的公開預覽發布內容。已採 MIT 授權並完成本機驗證；實際版本標籤與發布 commit 由維護者設定，尚未建立遠端 Release。
+本專案已採 MIT 授權並公開發布 [v1.0.0-preview.1](https://github.com/whos-dwg/LayerLab/releases/tag/v1.0.0-preview.1)。本次維護修正 DXF 成功提示，更新文件及附件，並將 Release 標記為 Pre-release。
 
 ## Repository About
 
@@ -14,7 +14,7 @@
 
 LayerLab — 首次公開預覽
 
-版本標籤由維護者確認後填入；現有操作手冊中的 v1.0 不視為已存在的 Git tag。
+版本標籤為 `v1.0.0-preview.1`。本次更新會同步標籤、原始碼及發布附件。
 
 ## Release 內文
 
@@ -53,10 +53,10 @@ MIT License。
 ## 發布前完成
 
 - [x] 權利人選擇 MIT，已加入 LICENSE。
-- [ ] 確認儲存庫擁有者、公開網址、版本標籤與發布 commit。
-- [ ] 審查待發布內容與 Git 歷史，排除客戶圖面、私人標準、金鑰及機器專屬資料。
+- [x] 已確認公開儲存庫與版本標籤。
+- [x] 僅發布白名單內容與公開歷史，保留已獲同意的匿名化預設標準。
 - [x] 在既有 Windows 主機的全新 Python venv 完成安裝、示範與原生 DWG 流程；非全新 OS 驗收。
 - [x] 已加入 docs/VALIDATION.md 與去識別驗證報告。
 - [x] README 加入審核中與驗證完成的實際示範截圖。
 - [x] 原始碼 ZIP 使用檔案白名單，不含 AutoCAD DLL、安裝程式、客戶圖面或虛擬環境。
-- [ ] 將上方草稿貼入 GitHub Release，依驗收結果決定是否標記為 pre-release。
+- [x] 公開預覽採 Pre-release 標記。

@@ -45,7 +45,8 @@ async function boot(options={}) {
     else if(url==='/api/demo')value={inventory:options.demoInventory||inventory,standard,suggestions};
     else if(url==='/api/jobs/'+JOB+'/files/inventory.json'){
       if(options.expiredJob)throw Error('Missing job');value=options.serverInventory||inventory;
-    } else throw Error('Unexpected API request: '+url);
+    } else if(url==='/api/jobs/'+JOB+'/convert'&&options.convertResult)value=options.convertResult;
+    else throw Error('Unexpected API request: '+url);
     return {ok:true,json:async()=>copy(value)};
   };
   for(const file of ['workbench-core.js','preview-hover.js','app.js'])w.eval(fs.readFileSync(path.join(ui,file),'utf8'));
@@ -212,4 +213,21 @@ test('default standard label becomes the imported filename and survives undo and
     await until(()=>next.$('#target-standard-version').textContent.startsWith(fileName),'restored standard label');
     verifyLabel(next,fileName);
   }finally{next.close();}
+});
+
+
+test('verified DXF and DWG success messages match their download and save actions',async()=>{
+  for(const format of ['DXF','DWG']) {
+    const result={output:'verified.'+format.toLowerCase(),download_prefix:'/downloads/',mapping:'mapping.json',validation:'validation.json',report:{status:'PASS',entity_count_before:70,entity_count_after:70}};
+    const p=await boot({demoInventory:{...copy(inventory),filetype:format},convertResult:result});
+    try {
+      await p.load();p.$('#select-filtered').click();p.$('#bulk-keep').click();
+      assert.equal(p.$('#convert-btn').disabled,false);p.$('#convert-btn').click();
+      await until(()=>!p.$('#results').hidden,'verified result');
+      const message=p.$('#toast').textContent;
+      if(format==='DXF') {assert.match(message,/DXF.*下載/);assert.doesNotMatch(message,/DWG/);assert.match(p.$('#results a').textContent,/verified.dxf/);}
+      else {assert.match(message,/DWG 儲存位置/);assert.match(p.$('#results button').textContent,/儲存 DWG/);}
+      assert.deepEqual(p.errors,[]);
+    } finally {p.close();}
+  }
 });

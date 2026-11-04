@@ -700,7 +700,7 @@
       }
       if(!valid())return;
       showVerifiedResult(result,format);
-      toast('另存與驗證完成，請選擇 DWG 儲存位置。');
+      toast(format==='DWG'?'另存與驗證完成，請選擇 DWG 儲存位置。':'DXF 另存與驗證完成，請下載驗證後的檔案。');
     }); // A write is never retried automatically or through a generic retry action.
   }
   function setFilter(filter) {
