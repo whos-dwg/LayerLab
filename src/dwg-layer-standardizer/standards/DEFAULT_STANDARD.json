@@ -1,0 +1,539 @@
+{
+  "schema": "cad-layer-standard/v1",
+  "version": "1.1.0",
+  "layers": [
+    {
+      "name": "A-balcony",
+      "aci": 2,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "category": "balcony",
+      "aliases": [
+        "A-BAL"
+      ],
+      "plot": true,
+      "discipline": "architecture",
+      "scope": "existing_building"
+    },
+    {
+      "name": "A-beam",
+      "aci": 7,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "category": "beam",
+      "aliases": [
+        "A-BEAM",
+        "A-BEAM-P"
+      ],
+      "plot": true,
+      "discipline": "architecture",
+      "scope": "existing_building"
+    },
+    {
+      "name": "A-col",
+      "aci": 4,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "category": "column",
+      "aliases": [
+        "A-COL"
+      ],
+      "plot": true,
+      "discipline": "architecture",
+      "scope": "existing_building"
+    },
+    {
+      "name": "A-dim",
+      "aci": 7,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "category": "annotation",
+      "aliases": [
+        "A-DIM-I",
+        "A-DIM-E"
+      ],
+      "plot": true,
+      "discipline": "architecture",
+      "scope": "existing_building"
+    },
+    {
+      "name": "A-door",
+      "aci": 7,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "category": "door",
+      "aliases": [
+        "A-DOOR"
+      ],
+      "plot": true,
+      "discipline": "architecture",
+      "scope": "existing_building"
+    },
+    {
+      "name": "A-furn",
+      "aci": 1,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "furniture",
+      "aliases": [
+        "A-FURN"
+      ],
+      "discipline": "architecture",
+      "scope": "existing_building"
+    },
+    {
+      "name": "A-grid",
+      "aci": 8,
+      "linetype": "CENTER",
+      "lineweight": -3,
+      "plot": true,
+      "category": "grid",
+      "aliases": [],
+      "discipline": "architecture",
+      "scope": "existing_building"
+    },
+    {
+      "name": "A-grid-dim",
+      "aci": 1,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "annotation",
+      "aliases": [],
+      "discipline": "architecture",
+      "scope": "existing_building"
+    },
+    {
+      "name": "A-hatch",
+      "aci": 8,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "category": "hatch",
+      "aliases": [
+        "A-HATCH"
+      ],
+      "plot": true,
+      "discipline": "architecture",
+      "scope": "existing_building"
+    },
+    {
+      "name": "A-lift",
+      "aci": 2,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "category": "elevator",
+      "aliases": [
+        "A-LIFT"
+      ],
+      "plot": true,
+      "discipline": "architecture",
+      "scope": "existing_building"
+    },
+    {
+      "name": "A-parking",
+      "aci": 7,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "category": "parking",
+      "aliases": [
+        "A-PARK"
+      ],
+      "plot": true,
+      "discipline": "architecture",
+      "scope": "existing_building"
+    },
+    {
+      "name": "A-sanitary",
+      "aci": 7,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "category": "sanitary",
+      "aliases": [
+        "A-TOILET"
+      ],
+      "plot": true,
+      "discipline": "architecture",
+      "scope": "existing_building"
+    },
+    {
+      "name": "A-strs",
+      "aci": 9,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "category": "stair",
+      "aliases": [
+        "A-STRS"
+      ],
+      "plot": true,
+      "discipline": "architecture",
+      "scope": "existing_building"
+    },
+    {
+      "name": "A-text",
+      "aci": 7,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "category": "annotation",
+      "aliases": [
+        "A-TEXT-I",
+        "A-CODE"
+      ],
+      "plot": true,
+      "discipline": "architecture",
+      "scope": "existing_building"
+    },
+    {
+      "name": "A-title",
+      "aci": 2,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "annotation",
+      "aliases": [],
+      "discipline": "architecture",
+      "scope": "existing_building"
+    },
+    {
+      "name": "A-wall",
+      "aci": 6,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "category": "wall",
+      "aliases": [
+        "A-Wall"
+      ],
+      "plot": true,
+      "discipline": "architecture",
+      "scope": "existing_building"
+    },
+    {
+      "name": "A-wind",
+      "aci": 4,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "window",
+      "aliases": [
+        "A-Wind"
+      ],
+      "discipline": "architecture",
+      "scope": "existing_building"
+    },
+    {
+      "name": "EM-dim",
+      "aci": 1,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "annotation",
+      "aliases": []
+    },
+    {
+      "name": "EM-text",
+      "aci": 1,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "annotation",
+      "aliases": []
+    },
+    {
+      "name": "FC-carpet",
+      "aci": 7,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "category": "flooring",
+      "aliases": [],
+      "plot": true,
+      "discipline": "floor_covering"
+    },
+    {
+      "name": "FC-dim",
+      "aci": 7,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "annotation",
+      "aliases": [],
+      "discipline": "floor_covering"
+    },
+    {
+      "name": "FC-text",
+      "aci": 1,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "category": "annotation",
+      "aliases": [],
+      "plot": true,
+      "discipline": "floor_covering"
+    },
+    {
+      "name": "LA-built-in",
+      "aci": 2,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "built_in",
+      "aliases": []
+    },
+    {
+      "name": "LA-built-in-full",
+      "aci": 3,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "built_in",
+      "aliases": []
+    },
+    {
+      "name": "LA-carpet",
+      "aci": 7,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "flooring",
+      "aliases": [
+        "LA-Carpet"
+      ]
+    },
+    {
+      "name": "LA-col",
+      "aci": 1,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "column",
+      "aliases": [
+        "LA-COL"
+      ]
+    },
+    {
+      "name": "LA-curtain",
+      "aci": 4,
+      "linetype": "CENTER",
+      "lineweight": -3,
+      "plot": true,
+      "category": "curtain",
+      "aliases": []
+    },
+    {
+      "name": "LA-dim",
+      "aci": 1,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "annotation",
+      "aliases": [
+        "LA-Dim"
+      ]
+    },
+    {
+      "name": "LA-door",
+      "aci": 1,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "door",
+      "aliases": []
+    },
+    {
+      "name": "LA-flooring",
+      "aci": 8,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "flooring",
+      "aliases": []
+    },
+    {
+      "name": "LA-furn",
+      "aci": 1,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "furniture",
+      "aliases": []
+    },
+    {
+      "name": "LA-furn-ca",
+      "aci": 1,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "furniture",
+      "aliases": [
+        "LA-furn-CA"
+      ]
+    },
+    {
+      "name": "LA-hatch",
+      "aci": 8,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "hatch",
+      "aliases": []
+    },
+    {
+      "name": "LA-light",
+      "aci": 1,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "lighting",
+      "aliases": []
+    },
+    {
+      "name": "LA-mark",
+      "aci": 2,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "annotation",
+      "aliases": []
+    },
+    {
+      "name": "LA-plant",
+      "aci": 253,
+      "linetype": "Continuous",
+      "lineweight": 9,
+      "plot": true,
+      "category": "planting",
+      "aliases": [
+        "LA-Plant"
+      ]
+    },
+    {
+      "name": "LA-sanitary",
+      "aci": 4,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "sanitary",
+      "aliases": []
+    },
+    {
+      "name": "LA-text",
+      "aci": 1,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "annotation",
+      "aliases": []
+    },
+    {
+      "name": "LA-wall",
+      "aci": 1,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "wall",
+      "aliases": []
+    },
+    {
+      "name": "LA-wall-finish",
+      "aci": 6,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "wall_finish",
+      "aliases": []
+    },
+    {
+      "name": "LA-wipeout",
+      "aci": 7,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "mask",
+      "aliases": []
+    },
+    {
+      "name": "RC-ceiling",
+      "aci": 7,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "ceiling",
+      "aliases": []
+    },
+    {
+      "name": "RC-dim",
+      "aci": 1,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "annotation",
+      "aliases": []
+    },
+    {
+      "name": "RC-e&m",
+      "aci": 7,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "mep",
+      "aliases": [
+        "RC-E&M"
+      ]
+    },
+    {
+      "name": "RC-furn",
+      "aci": 8,
+      "linetype": "HIDDEN",
+      "lineweight": -3,
+      "plot": true,
+      "category": "furniture",
+      "aliases": []
+    },
+    {
+      "name": "RC-lighting",
+      "aci": 7,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "lighting",
+      "aliases": []
+    },
+    {
+      "name": "RC-text",
+      "aci": 1,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "plot": true,
+      "category": "annotation",
+      "aliases": []
+    }
+  ],
+  "naming_policy": {
+    "prefix_case": "upper",
+    "separator": "-",
+    "suffix_case": "lower"
+  },
+  "prefix_semantics": {
+    "A": {
+      "discipline": "architecture",
+      "scope": "existing_building"
+    },
+    "FC": {
+      "discipline": "floor_covering"
+    }
+  },
+  "unclassified_object_policy": {
+    "auto_create_layer": false,
+    "action": "ask_user_before_layer_creation",
+    "naming_template": "<UPPERCASE_PREFIX>-<lowercase_suffix>",
+    "required_approval_fields": [
+      "layer_name",
+      "purpose_or_category",
+      "aci",
+      "linetype",
+      "lineweight",
+      "plot"
+    ],
+    "if_creation_is_declined": "keep_source_and_exclude_from_standard",
+    "if_evidence_is_ambiguous": "leave_pending_and_request_human_judgment"
+  },
+  "name": "LayerLab Architectural Default"
+}

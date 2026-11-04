@@ -1,0 +1,7 @@
+interface:
+  display_name: "DWG Layer Standardizer"
+  short_description: "Standardize native DWG layers with verified AutoCAD output"
+  default_prompt: "Use $dwg-layer-standardizer to inspect this DWG, prepare an auditable layer mapping, and create a native Save/Reopen-verified DWG copy after my approval."
+
+policy:
+  allow_implicit_invocation: true

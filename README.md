@@ -81,7 +81,7 @@ $env:CADLAYER_STANDARD = (Resolve-Path "src/dwg-layer-standardizer/standards/DEM
 
 若要重現本次套件版本，可將安裝命令的 requirements 路徑改為 `docs/requirements-validated.txt`。
 
-上例使用內附示範標準；正式作業前，請將 `CADLAYER_STANDARD` 改為已核准標準 JSON 的絕對路徑。公司專用標準不保證包含於公開儲存庫。
+上例使用內附示範標準；正式作業前，請將 `CADLAYER_STANDARD` 改為已核准標準 JSON 的絕對路徑。另內附 47 層的匿名化預設標準 `standards/DEFAULT_STANDARD.json`，保留圖層名稱、CAD 屬性、別名、分類與命名規則，不含公司名稱及來源工作紀錄。
 
 1. 點選「開啟示範 DXF」，或匯入 DWG、DXF／`cad-layer-inventory/v1` 盤點 JSON。
 2. 檢查目前標準，查看來源層的內容證據與幾何。
@@ -120,6 +120,8 @@ python scripts/run.py convert --source input.dwg --inventory scan-job/inventory.
 | `OPENAI_API_KEY` | 啟用可選的模型語意建議 |
 | `CADLAYER_AI_MODEL` | 指定模型；目前程式預設為 `gpt-5-mini` |
 | `CADLAYER_AI_BASE_URL` | 覆寫模型 API base URL |
+
+未設定 `CADLAYER_STANDARD` 時，工作台載入 `DEFAULT_STANDARD.json`。若要在快速開始環境改用預設標準，將環境變數路徑的 `DEMO_STANDARD.json` 改成 `DEFAULT_STANDARD.json`，然後重新啟動服務。範例截圖與驗證使用 DEMO 標準；預設標準中的非連續線型須已存在於待處理圖面，缺少時會停止轉換。
 
 標準格式為 `cad-layer-standard/v1`。ACI 範圍為 1–255，線寬單位為 1/100 mm；目標線型需存在於來源圖面。
 

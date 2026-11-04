@@ -1,0 +1,21 @@
+{
+  "status": "PASS",
+  "source_unchanged": true,
+  "geometry_and_non_layer_properties_match": true,
+  "save_reopen": true,
+  "entity_count_before": 18,
+  "entity_count_after": 18,
+  "mapped_entity_counts": {
+    "A-WALL": 8,
+    "WALL-NEW": 3,
+    "A-DOOR": 2,
+    "MISC-05": 3,
+    "A-TEXT": 1
+  },
+  "block_definitions_unchanged": true,
+  "output": "demo_input_standardized.dxf",
+  "warnings": [
+    "圖塊定義內物件已盤點，但 MVP 不會修改圖塊定義內的圖層；仍需獨立審核。",
+    "存在物件顏色／線型／線寬覆寫。轉換不會強制改成 ByLayer。"
+  ]
+}

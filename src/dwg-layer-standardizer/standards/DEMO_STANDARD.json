@@ -1,0 +1,12 @@
+{
+  "schema": "cad-layer-standard/v1",
+  "name": "DEMO ONLY / 示範標準（不是你的正式圖層）",
+  "version": "0.1.0",
+  "layers": [
+    {"name": "STD-WALL", "aci": 8, "linetype": "CONTINUOUS", "lineweight": 35, "category": "wall", "aliases": ["WALL-NEW"]},
+    {"name": "STD-DOOR", "aci": 2, "linetype": "CONTINUOUS", "lineweight": 25, "category": "door", "aliases": ["A-DOOR"]},
+    {"name": "STD-FURNITURE", "aci": 3, "linetype": "CONTINUOUS", "lineweight": 18, "category": "furniture", "aliases": []},
+    {"name": "STD-ANNOTATION", "aci": 7, "linetype": "CONTINUOUS", "lineweight": 18, "category": "annotation", "aliases": []},
+    {"name": "STD-HATCH", "aci": 9, "linetype": "CONTINUOUS", "lineweight": 9, "category": "hatch", "aliases": []}
+  ]
+}
