@@ -1,10 +1,12 @@
-# DWG Layer Standardizer v1.0
+# LayerLab v1.0.0-preview.3 操作手冊
 
 以原生 DWG 為主的圖層盤點、人工審核與標準化 skill。DWG 由 AutoCAD 2026 原生處理；不會先轉成 DXF，也不會覆寫來源檔。DXF 僅保留為相容流程。
 
 ## 啟動工作台
 
-雙擊 `start-layerlab.bat`，或執行：
+公開原始碼包請先依[首頁快速開始](../../README.md#快速開始)建立根目錄虛擬環境、安裝相依套件並以 uvicorn 啟動。下載入口為 [v1.0.0-preview.3 Release](https://github.com/whos-dwg/LayerLab/releases/tag/v1.0.0-preview.3)。原生 DWG 需要 AutoCAD 2026 Update 1.2 以上與 .NET 10 SDK；DXF 示範不需要這兩項。
+
+已安裝且完成同步設定的 skill 可雙擊 `start-layerlab.bat`，或在 `src/dwg-layer-standardizer` 目錄、使用已安裝相依套件的 Python 執行：
 
 ```powershell
 python scripts/run.py serve --port 8765 --open-browser
@@ -16,6 +18,8 @@ python scripts/run.py serve --port 8765 --open-browser
 
 ### 已安裝 skill 的自動同步
 
+此功能需要 Git checkout 與包含 `tools/test-workbench-core.cjs` 的完整開發來源。公開預覽原始碼包及目前公開倉庫不含內部 `tools/`，請使用上方獨立 uvicorn 啟動流程，不要對其設定自動同步。
+
 本機安裝可用以下命令連結此 Git 專案，並指定使用者核准的正式標準：
 
 ```powershell
@@ -24,7 +28,7 @@ python scripts/sync_ui.py install --repo "C:\Projects\LayerLab" --target "$env:U
 
 設定完成後，commit、merge／pull、切換分支或版本會觸發 Git hook。`scripts/run.py serve` 和雙擊啟動器在啟動前也會補做檢查。同步只取 Git HEAD 已提交的介面與同步檢查程式；未提交的試作不會被安裝。更新先做 JavaScript 語法檢查及已提交的核心測試，再備份舊檔、逐檔核對雜湊，最後發布入口 HTML。HTML 的資產版本會使用 commit 編號，避免舊快取。同步失敗會保留／復原原版並回報錯誤；不會自動推送 Git。
 
-同步不包含 `cadlayer/`、`standards/`、`.venv/` 或工作資料；安裝時只替啟動器加上同步檢查，不覆寫自訂 CAD 引擎。舊檔保存在已安裝目錄的 `.layerlab-ui-backups/`，每次附有 manifest。既有 Git hooks 不會被自動取代。
+同步包含介面、`cadlayer/app.py` API 入口與同步檢查程式；不包含其他 CAD 引擎模組、`standards/`、`.venv/` 或工作資料。安裝時會替啟動器加上同步檢查。舊檔保存在已安裝目錄的 `.layerlab-ui-backups/`，每次附有 manifest。既有 Git hooks 不會被自動取代。
 
 已安裝目錄的 `.layerlab-sync.json` 保存來源專案與正式標準路徑。正式標準直接讀取該路徑，介面同步不複製或覆寫它；找不到設定的正式標準時停止啟動，不會退回示範標準。明確設定的 `CADLAYER_STANDARD` 仍可覆寫預設。尚未連結安裝副本的獨立專案維持原本的示範模式。
 
@@ -55,13 +59,13 @@ Git hooks 優先使用專案虛擬環境的 Python。同步工具會檢查可執
 
 「建議工具」位於上方可展開的工作區資訊內。「採用所有圖層的建議」包含目前搜尋、篩選及分頁以外的圖層，會先顯示影響範圍；手動指定的暫定目標與既有人工決策保持不變。映射變更與標準切換提供上一步復原。切換標準時，可選擇保留相容決策；只有保留原圖層或目標 CAD 屬性未變更的決策可沿用。另存期間會鎖定資料變更，失敗原因保留於畫面，不會自動重試寫入。
 
-前端核心規則的回歸測試可在專案根目錄執行：`node --test tools/test-workbench-core.cjs`。涵蓋人工審核與系統保護的區分、篩選、全選狀態、標準切換、幾何判斷、暫定與核准分離、批次確認的完整性，以及 300 個來源與 160 個目標的批次操作。
+以下測試命令只適用含內部 `tools/` 的開發副本。前端核心規則的回歸測試可在專案根目錄執行：`node --test tools/test-workbench-core.cjs`。涵蓋人工審核與系統保護的區分、篩選、全選狀態、標準切換、幾何判斷、暫定與核准分離、批次確認的完整性，以及 300 個來源與 160 個目標的批次操作。
 
 完整前端互動回歸：先以 `npm install --prefix temp/layerlab-dom-tests --no-save --ignore-scripts jsdom@26.1.0` 安裝隔離測試依賴，再執行 `node --test tools/test-workbench-ui.cjs`。此測試使用完全合成的測試標準及模擬 API，涵蓋完整目標清單、跨頁批次、重新開啟恢復、來源／標準不相符、儲存失敗與分頁衝突；不啟動 CAD。
 
 ## DWG 原生流程
 
-`讀取 DWG → 原生內容盤點 → 人工核准 mapping → 第一個 AutoCAD 程序另存新 DWG → 程序完全退出 → 第二個 AutoCAD 程序重開輸出 → 驗證 → 報告`
+`讀取 DWG → 原生內容盤點 → 人工核准 mapping → 第一個 AutoCAD 程序寫入副本 → 程序退出 → 第二個程序重開並清理來源層 → 程序退出 → 第三個程序重開驗證 → 報告`
 
 驗證項目包括：
 
@@ -74,11 +78,11 @@ Git hooks 優先使用專案虛擬環境的 Python。同步工具會檢查可執
 - 映射到不同目標、且不再被物件或其他映射引用的來源圖層會被移除；同名屬性更新、受保護層及物件層級保留例外不刪除；
 - 任一門檻失敗即刪除未驗證的 DWG 輸出。
 
-完成畫面以通過 Save/Reopen 的標準化 DWG 為主要成果，另提供「另存 AutoCAD 圖層轉換映射 DWS」選配按鈕。DWS 保存本次已核准的來源層→標準層映射及使用到的目標圖層屬性，供後續在 AutoCAD `LAYTRANS → Load` 重用；它不取代 DWG。產生 DWS 時必須有一個已啟動、目前沒有執行中命令的 AutoCAD 2026 桌面工作階段。系統只會暫開可丟棄的來源副本，實際載入並套用 DWS、儲存副本，再由新的 Core Console 程序重開核對；原本的使用者文件會重新啟用且不會被儲存或關閉。
+完成畫面以通過 Save/Reopen 的標準化 DWG 為主要成果，另提供「匯出 DWS」選配按鈕。DWS 保存本次已核准的來源層→標準層映射及使用到的目標圖層屬性，供後續在 AutoCAD `LAYTRANS → Load` 重用；它不取代 DWG。產生 DWS 時必須有一個已啟動、目前沒有執行中命令的 AutoCAD 2026 桌面工作階段。系統只會暫開可丟棄的來源副本，實際載入並套用 DWS、儲存副本，再由新的 Core Console 程序重開核對；原本的使用者文件會重新啟用且不會被儲存或關閉。
 
 DWS 成功會產生 `*_layer_mapping.dws` 與 `dws-validation.json`；報告必須包含 `actual_autocad_load: true`，並確認映射來源圖層已在翻譯後移除。若桌面 AutoCAD 忙碌、DWS 載入／套用／重開驗證失敗，未驗證的 DWS 會被移除，畫面顯示「DWG 已完成、DWS 未產生」，已通過的主要 DWG 維持成功。
 
-統一命令列入口：
+統一命令列入口（從 `src/dwg-layer-standardizer` 執行；根目錄 venv 使用者請以 `..\..\.venv\Scripts\python.exe` 取代 `python`）：
 
 ```powershell
 python scripts/run.py health

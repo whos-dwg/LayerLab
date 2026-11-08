@@ -6,7 +6,7 @@
 
 Windows 本機圖層審核工作台 · AutoCAD 2026 原生 DWG · DXF 相容流程
 
-[快速開始](#快速開始) · [操作手冊](src/dwg-layer-standardizer/README.zh-TW.md) · [資料契約](src/dwg-layer-standardizer/references/CONTRACTS.md) · [參與開發](CONTRIBUTING.md)
+[下載 v1.0.0-preview.3](https://github.com/whos-dwg/LayerLab/releases/tag/v1.0.0-preview.3) · [快速開始](#快速開始) · [操作手冊](src/dwg-layer-standardizer/README.zh-TW.md) · [資料契約](src/dwg-layer-standardizer/references/CONTRACTS.md) · [參與開發](CONTRIBUTING.md)
 
 </div>
 
@@ -24,6 +24,7 @@ LayerLab 協助整理來自不同顧問、廠商與專案的 DWG／DXF 圖層。
 
 - [功能](#功能)
 - [處理流程](#處理流程)
+- [下載目前預覽版](#下載目前預覽版)
 - [快速開始](#快速開始)
 - [命令列操作](#命令列操作)
 - [設定與資料](#設定與資料)
@@ -61,6 +62,16 @@ flowchart LR
 
 例如，同樣名為 `WALL` 的來源層，仍需檢視內容並指定公司標準中的目標層；選擇目標後先成為暫定映射，確認後才可進入轉換。
 
+## 下載目前預覽版
+
+目前公開預覽版為 [v1.0.0-preview.3](https://github.com/whos-dwg/LayerLab/releases/tag/v1.0.0-preview.3)，已包含三項建置警告修正與 DWS 桌面驗證成果。
+
+- [下載原始碼 ZIP](https://github.com/whos-dwg/LayerLab/releases/download/v1.0.0-preview.3/LayerLab-v1.0.0-preview.3-source.zip)
+- [下載 SHA256SUMS.txt](https://github.com/whos-dwg/LayerLab/releases/download/v1.0.0-preview.3/SHA256SUMS.txt)
+- [目前操作手冊](src/dwg-layer-standardizer/README.zh-TW.md) · [此版本驗證紀錄](https://github.com/whos-dwg/LayerLab/blob/v1.0.0-preview.3/docs/VALIDATION.md)
+
+將 ZIP 與校驗檔下載至同一資料夾，以 PowerShell 執行 `Get-FileHash .\LayerLab-v1.0.0-preview.3-source.zip -Algorithm SHA256`，核對結果與 `SHA256SUMS.txt` 一致。這是原始碼包，需依下列步驟安裝相依套件；舊版附件只供歷史參考。
+
 ## 快速開始
 
 ### 環境需求
@@ -71,27 +82,32 @@ flowchart LR
 - 原生整合目前使用 `C:\Program Files\Autodesk\AutoCAD 2026`；其他安裝位置需調整整合程式與參考路徑。
 - Node.js 僅用於前端檢查及測試。
 
-下載儲存庫 ZIP 並解壓，於專案根目錄開啟 PowerShell：
+下載上方 v1.0.0-preview.3 ZIP 並解壓，進入包含 `README.md` 與 `src` 的 `LayerLab` 資料夾，於此開啟 PowerShell：
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r src/dwg-layer-standardizer/requirements.txt
+.\.venv\Scripts\python.exe -m pip check
 $env:CADLAYER_STANDARD = (Resolve-Path "src/dwg-layer-standardizer/standards/DEMO_STANDARD.json").Path
 .\.venv\Scripts\python.exe src/dwg-layer-standardizer/scripts/run.py health
 .\.venv\Scripts\python.exe -m uvicorn cadlayer.app:app --app-dir src/dwg-layer-standardizer --host 127.0.0.1 --port 8765
 ```
 
-保持 PowerShell 開啟，手動在瀏覽器開啟 `http://127.0.0.1:8765`；結束時於 PowerShell 按 Ctrl+C。若 8765 已被使用，將命令的連接埠與瀏覽器網址一併改為 8877。獨立示範使用 uvicorn 啟動，可避免本機既有 skill 的正式標準同步設定介入。正式已安裝 skill 仍使用操作手冊的 `run.py serve`。
+保持 PowerShell 開啟，手動在瀏覽器開啟 `http://127.0.0.1:8765`；結束時於 PowerShell 按 Ctrl+C。若 8765 已被使用，將命令的連接埠與瀏覽器網址一併改為 8877。公開原始碼包使用此 uvicorn 入口，可避免本機既有 skill 的標準與同步設定介入。`run.py serve` 與雙擊啟動器另有已安裝 skill 的同步檢查，適用條件見操作手冊。
+
+`health` 只檢查 adapter 與執行器是否存在，不代表已完成原生建置或圖面轉換。首次讀取 DWG 時會建置缺少的 adapter，需可用的 .NET SDK 與 NuGet 套件來源；DXF 示範不需要 AutoCAD 或 .NET。
 
 若要重現本次套件版本，可將安裝命令的 requirements 路徑改為 `docs/requirements-validated.txt`。
 
-上例使用內附示範標準；正式作業前，請將 `CADLAYER_STANDARD` 改為已核准標準 JSON 的絕對路徑。另內附 47 層的匿名化預設標準 `standards/DEFAULT_STANDARD.json`，保留圖層名稱、CAD 屬性、別名、分類與命名規則，不含公司名稱及來源工作紀錄。
+上例使用內附示範標準；正式作業前，請將 `CADLAYER_STANDARD` 改為已核准標準 JSON 的絕對路徑。另內附 47 層的匿名化預設標準 `src/dwg-layer-standardizer/standards/DEFAULT_STANDARD.json`，保留圖層名稱、CAD 屬性、別名、分類與命名規則，不含公司名稱及來源工作紀錄。
 
 1. 點選「開啟示範 DXF」，或匯入 DWG、DXF／`cad-layer-inventory/v1` 盤點 JSON。
 2. 檢查目前標準，查看來源層的內容證據與幾何。
 3. 指定目標並確認映射，或明確選擇保留；完成所有非保護來源層的決策。
 4. 匯出映射供留存，再執行另存與驗證。
 5. 檢查驗證報告及輸出圖面。
+
+匯入盤點 JSON 僅供審核及匯出映射；要另存圖面，請直接匯入原始 DWG 或 DXF。
 
 ### 完整示範操作
 
@@ -105,9 +121,15 @@ $env:CADLAYER_STANDARD = (Resolve-Path "src/dwg-layer-standardizer/standards/DEM
 
 本次實際驗證範圍、套件版本與限制見[驗證紀錄](docs/VALIDATION.md)。
 
+### DWG 與可選 DWS
+
+匯入 DWG、完成映射核准後，點選「另存 DWG 並驗證」。系統依序以三個獨立 AutoCAD 程序寫入副本、重開清理來源層、再次重開驗證；成功後可儲存標準化 DWG。
+
+需要重用整層映射時，先啟動 AutoCAD 2026 桌面，確認沒有執行中的命令，再點選「匯出 DWS」。系統會在可丟棄的來源副本實際載入及套用 DWS、儲存，再以獨立 Core Console 重開驗證。通過後才提供 DWS 與驗證報告；可用 AutoCAD `LAYTRANS → Load` 載入。此選配不支援逐物件例外，DXF 也不提供 DWS。失敗時保留已驗證主 DWG，並顯示「DWG 已完成、DWS 未產生」。
+
 ## 命令列操作
 
-以下命令從 `src/dwg-layer-standardizer` 目錄執行，並使用已安裝相依套件的 Python：
+以下命令從 `src/dwg-layer-standardizer` 目錄執行，並使用已安裝相依套件的 Python。若依快速開始建立了根目錄 `.venv`，請將下方 `python` 改為 `..\..\.venv\Scripts\python.exe`：
 
 ```powershell
 python scripts/run.py health
@@ -156,7 +178,6 @@ src/dwg-layer-standardizer/
 ├── standards/      示範標準
 ├── references/     資料契約
 └── examples/       DXF 示範
- tools/             測試與維護工具
 ```
 
 - [完整操作手冊](src/dwg-layer-standardizer/README.zh-TW.md)
@@ -164,7 +185,7 @@ src/dwg-layer-standardizer/
 - [貢獻指南](CONTRIBUTING.md)
 - [發布文案與準備事項](docs/GITHUB_RELEASE.md)
 
-已安裝 skill 的介面同步只取 Git HEAD 已提交內容；設定與邊界請見操作手冊。
+公開預覽包不附內部 `tools/` 測試與維護腳本。已安裝 skill 的同步需要含對應測試的完整開發副本，設定與邊界請見操作手冊。
 
 ## 授權
 
