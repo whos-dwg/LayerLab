@@ -16,7 +16,7 @@
     revision:0, operation:0, undo:null, retry:null, searchIndex:new Map(),
     rowByName:new Map(), geometries:new Map(), background:[], visible:[], rowNodes:new Map(),
     view:null, baseView:null, drag:null, drafts:new Map(), activeTarget:'', expandedTarget:'', targetQuery:'', category:'', assignedOnly:false, memberPage:0,
-    quickAfterImport:false
+    quickAfterImport:false, verifiedDwgResult:null, dwsStatusNode:null
   };
   let boardDrag=null,suppressBoardClickUntil=0,drawingKey='', toastTimeout, toastDeadline=0, toastRemaining=0, searchTimer;
   const rows = () => state.inventory?.layers || [];
@@ -116,8 +116,9 @@
   function fileLink(url,name) {
     const a=document.createElement('a');a.href=url;a.textContent=name;a.download=name;return a;
   }
-  function saveButton(url,name) {
-    const button=document.createElement('button');button.className='button primary result-save';button.textContent='選擇位置並儲存 DWG';
+  function artifactSaveButton(url,name,kind,label,className='primary') {
+    const extension='.'+kind.toLowerCase();
+    const button=document.createElement('button');button.className='button '+className+' result-save';button.textContent=label;
     button.addEventListener('click',async()=>{
       try {
         if(!window.showSaveFilePicker) {
@@ -125,19 +126,59 @@
           toast('瀏覽器已開始下載；可在瀏覽器下載設定中啟用每次詢問儲存位置。');
           return;
         }
-        const handle=await window.showSaveFilePicker({suggestedName:name,types:[{description:'AutoCAD DWG',accept:{'application/octet-stream':['.dwg']}}]});
+        const handle=await window.showSaveFilePicker({suggestedName:name,types:[{description:'AutoCAD '+kind,accept:{'application/octet-stream':[extension]}}]});
         button.disabled=true;button.textContent='正在儲存…';
-        const response=await fetch(url);if(!response.ok)throw new Error('無法讀取已驗證的 DWG（HTTP '+response.status+'）。');
+        const response=await fetch(url);if(!response.ok)throw new Error('無法讀取已驗證的 '+kind+'（HTTP '+response.status+'）。');
         const writable=await handle.createWritable();
         try { await writable.write(await response.blob());await writable.close(); }
         catch(error) { await writable.abort().catch(()=>{});throw error; }
-        button.textContent='已儲存至選擇的位置 ✓';toast('DWG 已儲存至你選擇的位置。');
+        button.textContent='已儲存至選擇的位置 ✓';toast(kind+' 已儲存至你選擇的位置。');
       } catch(error) {
         if(error?.name==='AbortError')return;
-        button.disabled=false;button.textContent='重新選擇儲存位置';showError('儲存 DWG 失敗',error);
+        button.disabled=false;button.textContent='重新選擇儲存位置';showError('儲存 '+kind+' 失敗',error);
       }
     });
     return button;
+  }
+  const saveButton = (url,name) => artifactSaveButton(url,name,'DWG','儲存標準化 DWG（主要成果）');
+
+  async function saveDws() {
+    const result=state.verifiedDwgResult,statusNode=state.dwsStatusNode,button=$('#dws-btn');
+    if(!result||!statusNode||button.disabled)return;
+    const suggested=result.output.replace(/_standardized\.dwg$/i,'_layer_mapping.dws');
+    let handle=null;
+    try {
+      if(window.showSaveFilePicker)handle=await window.showSaveFilePicker({suggestedName:suggested,
+        types:[{description:'AutoCAD Drawing Standards',accept:{'application/octet-stream':['.dws']}}]});
+      button.disabled=true;button.textContent='正在產生並以 AutoCAD 載入驗收…';
+      let dws=result.dws;
+      if(!dws?.report?.dws?.actual_autocad_load) {
+        dws=await jsonPost(result.dws_endpoint,{});
+        if(dws.status!=='PASS')throw Object.assign(new Error(dws.detail||dws.message),{dwsFailure:true});
+        result.dws=dws;
+      }
+      const url=result.download_prefix+dws.output;
+      if(!handle) {
+        fileLink(url,dws.output).click();
+        statusNode.textContent='DWS 已由 AutoCAD 實際載入驗收；瀏覽器已開始下載。';
+      } else {
+        const response=await fetch(url);if(!response.ok)throw new Error('無法讀取已驗證的 DWS（HTTP '+response.status+'）。');
+        const writable=await handle.createWritable();
+        try {await writable.write(await response.blob());await writable.close();}
+        catch(error){await writable.abort().catch(()=>{});throw error;}
+        statusNode.textContent='DWS 已由 AutoCAD 實際載入驗收，並儲存至選擇的位置。';
+      }
+      button.textContent='DWS 已儲存 ✓';
+      if(dws.validation&&!statusNode.querySelector('a'))statusNode.append(' ',fileLink(result.download_prefix+dws.validation,'DWS Validation JSON'));
+      toast('DWS 已產生、通過 AutoCAD 實際載入驗收並完成儲存。');
+    } catch(error) {
+      if(error?.name==='AbortError')return;
+      button.disabled=false;button.textContent='重新產生／另存 DWS';
+      if(error?.dwsFailure) {
+        statusNode.textContent='DWG 已完成、DWS 未產生。'+(error.message?' '+error.message:'');
+        statusNode.classList.add('failed');toast('DWG 已完成、DWS 未產生。',true);
+      } else showError('儲存 DWS 失敗',error);
+    }
   }
   async function request(endpoint,options={}) {
     const response=await fetch(endpoint,options);
@@ -181,6 +222,14 @@
     for(const id of ['standard-btn','standard-file','model-suggest-btn','export-btn']) $('#'+id).disabled=busy||!loaded;
     $('#model-suggest-btn').disabled=busy||!loaded||!state.semantic.available;
     $('#convert-btn').disabled=busy||!canConvert();
+    const dwsButton=$('#dws-btn'),dwsReady=!!state.verifiedDwgResult;
+    dwsButton.disabled=busy||!dwsReady;
+    if(!dwsReady) {
+      dwsButton.textContent=state.inventory?.filetype==='DXF'?'匯出 DWS（僅適用 DWG）':'匯出 DWS（需先完成 DWG）';
+      dwsButton.title=state.inventory?.filetype==='DXF'?'DWS 僅適用原生 DWG':'需先完成並驗證 DWG';
+    } else if(!/正在|已儲存|重新/.test(dwsButton.textContent)) {
+      dwsButton.textContent='匯出 DWS';dwsButton.title='產生並另存經 AutoCAD 實際載入驗證的 DWS';
+    }
     $('#undo-btn').disabled=busy||!state.undo;
     $('#bulk-stage').disabled=busy||!state.selected.size||!state.activeTarget;
     $('#clear-selection').disabled=busy||!state.selected.size;
@@ -233,7 +282,10 @@
       suggestionEngine:state.suggestionEngine,selected:new Set(state.selected),focused:state.focused,drafts:new Map(state.drafts),activeTarget:state.activeTarget};
   }
   function remember(label) { state.undo=snapshot(label); }
-  function invalidateResult() { state.revision++;$('#results').hidden=true;queueReviewSave(); }
+  function invalidateResult() {
+    state.revision++;state.verifiedDwgResult=null;state.dwsStatusNode=null;
+    $('#results').hidden=true;queueReviewSave();
+  }
   function undo() {
     if(state.busy||!state.undo)return;
     const previous=state.undo;
@@ -678,13 +730,23 @@
     },exportPlan);
   }
   function showVerifiedResult(result,format) {
+    state.verifiedDwgResult=format==='DWG'?result:null;state.dwsStatusNode=null;
     const box=$('#results');box.hidden=false;box.replaceChildren();
     const title=document.createElement('strong');title.textContent='✓ '+format+' 已另存並通過 Save/Reopen 驗證';
-    const detail=document.createElement('p');detail.textContent='物件數 '+result.report.entity_count_before+' → '+result.report.entity_count_after+'；原始檔未修改。'+(format==='DWG'?'模型、配置與可編輯圖塊定義已套用，XREF 保留。':'圖塊定義保留。');
+    const detail=document.createElement('p');
+    const removed=Array.isArray(result.report.removed_source_layers_verified)?result.report.removed_source_layers_verified.length:0;
+    detail.textContent='物件數 '+result.report.entity_count_before+' → '+result.report.entity_count_after+'；原始檔未修改。'+(format==='DWG'?'模型、配置與可編輯圖塊定義已套用，XREF 保留；已移除 '+removed+' 個映射來源圖層。':'圖塊定義保留。');
     box.append(title,detail);
-    if(format==='DWG')box.append(saveButton(result.download_prefix+result.output,result.output));
-    else box.append(fileLink(result.download_prefix+result.output,'下載 '+result.output));
+    if(format==='DWG') {
+      const actions=document.createElement('div');actions.className='result-actions';
+      const dwsStatus=document.createElement('p');dwsStatus.className='dws-status';
+      dwsStatus.textContent=result.dws?.report?.dws?.actual_autocad_load?'DWS 已通過 AutoCAD 實際載入驗收，可另存重用。':'DWS 為額外選項；產生失敗不影響上方已驗證 DWG。';
+      state.dwsStatusNode=dwsStatus;
+      actions.append(saveButton(result.download_prefix+result.output,result.output));
+      box.append(actions,dwsStatus);
+    } else box.append(fileLink(result.download_prefix+result.output,'下載 '+result.output));
     const audit=document.createElement('div');audit.className='result-audit';audit.append('稽核檔：',fileLink(result.download_prefix+result.mapping,'mapping.json'),fileLink(result.download_prefix+result.validation,'validation.json'));box.append(audit);
+    syncControls();
   }
   async function convert() {
     if(!canConvert())return;
@@ -827,6 +889,7 @@
   $('#model-suggest-btn').addEventListener('click',modelSuggest);
   $('#undo-btn').addEventListener('click',undo);
   $('#export-btn').addEventListener('click',exportPlan);
+  $('#dws-btn').addEventListener('click',saveDws);
   $('#convert-btn').addEventListener('click',convert);
   $('#retry-btn').addEventListener('click',()=>{if(!state.busy)state.retry?.();});
   $('#dismiss-error').addEventListener('click',()=>{clearError();syncControls();});

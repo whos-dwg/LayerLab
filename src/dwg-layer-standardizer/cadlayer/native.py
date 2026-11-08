@@ -3,19 +3,26 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import hashlib
 import json
 import shutil
 import subprocess
+import uuid
 
 BASE = Path(__file__).resolve().parent.parent
 NATIVE = BASE / "integrations" / "autocad-2026-native"
 CORE_CONSOLE = Path(r"C:\Program Files\Autodesk\AutoCAD 2026\accoreconsole.exe")
 SCAN_SCRIPT = NATIVE / "run-native-scan.ps1"
 CONVERT_SCRIPT = NATIVE / "run-native-convert.ps1"
+DWS_SCRIPT = NATIVE / "run-native-dws.ps1"
 
 
 def available() -> bool:
     return CORE_CONSOLE.is_file() and SCAN_SCRIPT.is_file() and CONVERT_SCRIPT.is_file() and bool(_powershell())
+
+
+def dws_available() -> bool:
+    return available() and DWS_SCRIPT.is_file()
 
 
 def _powershell() -> str | None:
@@ -61,11 +68,24 @@ def scan_dwg(source: Path, job_id: str, standard: dict[str, Any], job_folder: Pa
 
 
 def convert_dwg(source: Path, inventory: dict[str, Any], standard: dict[str, Any],
-                actions: list[dict[str, Any]], output_dir: Path) -> dict[str, Any]:
+                actions: list[dict[str, Any]], output_dir: Path,
+                entity_actions: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     if source.suffix.lower() != ".dwg" or inventory.get("filetype") != "DWG":
         raise ValueError("原生 DWG writer 收到非 DWG 工作。")
+    if output_dir.exists():
+        validation_path = output_dir / "validation.json"
+        try:
+            prior = json.loads(validation_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            prior = None
+        if (isinstance(prior, dict) and prior.get("status") == "PASS" and
+                prior.get("output", {}).get("save_reopen") is True and
+                len(list(output_dir.glob("*_standardized.dwg"))) == 1):
+            raise ValueError("此工作已有通過 Save/Reopen 的 DWG；請使用既有驗證成果。")
+        failed_dir = output_dir.with_name(f"{output_dir.name}-failed-{uuid.uuid4().hex[:8]}")
+        output_dir.rename(failed_dir)
     input_dir = output_dir.parent / "native-convert-input"
-    input_dir.mkdir(parents=False, exist_ok=False)
+    input_dir.mkdir(parents=False, exist_ok=True)
     mapping_path = input_dir / "approved-mapping.json"
     standard_path = input_dir / "approved-standard.json"
     mapping_path.write_text(json.dumps({
@@ -75,6 +95,7 @@ def convert_dwg(source: Path, inventory: dict[str, Any], standard: dict[str, Any
         "source_sha256": inventory["sha256"],
         "scope": "model_paper_and_editable_block_definitions",
         "actions": actions,
+        "entity_actions": entity_actions or [],
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     standard_path.write_text(json.dumps(standard, ensure_ascii=False, indent=2), encoding="utf-8")
     try:
@@ -83,7 +104,9 @@ def convert_dwg(source: Path, inventory: dict[str, Any], standard: dict[str, Any
             "-Standard", str(standard_path), "-OutFolder", str(output_dir),
         ], timeout=1800)
     except Exception:
-        shutil.rmtree(output_dir, ignore_errors=True)
+        # Keep the audit trail for diagnosis; never retain an unverified deliverable.
+        for candidate in output_dir.glob("*_standardized.dwg"):
+            candidate.unlink(missing_ok=True)
         raise
     outputs = list(output_dir.glob("*_standardized.dwg"))
     if len(outputs) != 1:
@@ -99,3 +122,42 @@ def convert_dwg(source: Path, inventory: dict[str, Any], standard: dict[str, Any
         "validation": validation_path.name,
         "report": validation,
     }
+
+
+def completed_dws(output_dir: Path) -> dict[str, Any] | None:
+    outputs = list(output_dir.glob("*_layer_mapping.dws"))
+    validation_path = output_dir / "dws-validation.json"
+    if len(outputs) != 1 or not validation_path.is_file():
+        return None
+    try:
+        validation = json.loads(validation_path.read_text(encoding="utf-8"))
+        output_hash = hashlib.sha256(outputs[0].read_bytes()).hexdigest().upper()
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    dws = validation.get("dws") if isinstance(validation, dict) else None
+    if (validation.get("status") != "PASS" or not isinstance(dws, dict) or
+            dws.get("actual_autocad_load") is not True or dws.get("path") != outputs[0].name or
+            str(dws.get("sha256", "")).upper() != output_hash):
+        return None
+    return {"status": "PASS", "output": outputs[0].name,
+            "validation": validation_path.name, "report": validation}
+
+
+def create_dws(source: Path, verified_dwg: Path, mapping_path: Path, standard_path: Path,
+               output_dir: Path) -> dict[str, Any]:
+    existing = completed_dws(output_dir)
+    if existing is not None:
+        return existing
+    if not dws_available():
+        raise ValueError("此電腦未偵測到可用的 AutoCAD 2026 DWS adapter。")
+    if source.suffix.lower() != ".dwg" or verified_dwg.suffix.lower() != ".dwg":
+        raise ValueError("DWS 只適用於已驗證的原生 DWG 工作。")
+    _run_script(DWS_SCRIPT, [
+        "-Source", str(source), "-VerifiedDwg", str(verified_dwg),
+        "-Mapping", str(mapping_path), "-Standard", str(standard_path),
+        "-OutFolder", str(output_dir),
+    ], timeout=1800)
+    result = completed_dws(output_dir)
+    if result is None:
+        raise ValueError("DWS 未通過 AutoCAD 實際載入驗收。")
+    return result

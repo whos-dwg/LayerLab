@@ -65,6 +65,12 @@ def build_parser() -> argparse.ArgumentParser:
     convert.add_argument("--mapping", type=Path, required=True)
     convert.add_argument("--out", type=Path, required=True)
     convert.set_defaults(handler=run_convert)
+    objects = sub.add_parser("objects", help="classify individual native DWG objects; optionally convert a copy")
+    objects.add_argument("--source", type=Path, required=True)
+    objects.add_argument("--standard", type=Path, required=True)
+    objects.add_argument("--out", type=Path, required=True)
+    objects.add_argument("--convert", action="store_true", help="authorize conservative object decisions and verified copy")
+    objects.set_defaults(handler=run_objects)
     serve = sub.add_parser("serve", help="start the local review workbench")
     serve.add_argument("--port", type=int, default=8765)
     serve.add_argument("--open-browser", action="store_true")
@@ -134,12 +140,18 @@ def run_convert(args: argparse.Namespace) -> None:
     if mapping_hash and mapping_hash.upper() != str(inventory.get("sha256", "")).upper():
         raise ValueError("Mapping is bound to a different source SHA-256.")
     verify_actions(inventory, standard, actions)
+    entity_actions = mapping.get("entity_actions", [])
+    if entity_actions:
+        if source.suffix.lower() != ".dwg":
+            raise ValueError("Individual object actions require native DWG.")
+        from cadlayer.objects import validate_object_actions
+        validate_object_actions(inventory, standard, entity_actions)
     if args.out.exists():
         raise ValueError("Output folder already exists; use a new output folder.")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     filetype = str(inventory.get("filetype", "")).upper()
     if filetype == "DWG" and source.suffix.lower() == ".dwg":
-        result = convert_dwg(source, inventory, standard, actions, args.out)
+        result = convert_dwg(source, inventory, standard, actions, args.out, entity_actions)
     elif filetype == "DXF" and source.suffix.lower() == ".dxf":
         from cadlayer.engine import convert_dxf
         result = convert_dxf(source, inventory, standard, actions, args.out)
@@ -158,6 +170,11 @@ def run_serve(args: argparse.Namespace) -> None:
         import webbrowser
         threading.Timer(1.5, lambda: webbrowser.open(f"http://127.0.0.1:{args.port}")).start()
     uvicorn.run("cadlayer.app:app", host="127.0.0.1", port=args.port, log_level="info")
+
+
+def run_objects(args: argparse.Namespace) -> None:
+    from cadlayer.objects import run
+    print(run(args.source.resolve(), args.standard.resolve(), args.out.resolve(), args.convert))
 
 
 def main() -> None:

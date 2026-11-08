@@ -121,6 +121,7 @@ public sealed class Commands
         var totalModel = 0;
         var totalPaper = 0;
         var totalBlock = 0;
+        var objects = new List<object>();
 
         using (var transaction = document.Database.TransactionManager.StartOpenCloseTransaction())
         {
@@ -160,6 +161,7 @@ public sealed class Commands
                     }
 
                     row.AddEntity(entity, context, block.Name, transaction);
+                    objects.Add(ObjectEvidence(entity, context, block, transaction, row.ProtectedReason));
                     switch (context)
                     {
                         case EntityContext.Model: totalModel++; break;
@@ -193,6 +195,7 @@ public sealed class Commands
             engine = new { application = "AutoCAD 2026", method = "native .NET content scanner",
                 native_write_status = "VERIFIED_SAVE_REOPEN" },
             layers = layerRows,
+            objects,
             total_entities = totalModel + totalPaper + totalBlock,
             totals = new { model = totalModel, paper = totalPaper, block = totalBlock },
             warnings,
@@ -538,6 +541,34 @@ public sealed class Commands
         }
     }
 
+    private static object ObjectEvidence(Entity entity, EntityContext context, BlockTableRecord owner,
+        Transaction transaction, string? protectedReason)
+    {
+        string? blockName = null;
+        var attributes = new Dictionary<string, string>();
+        if (entity is BlockReference reference)
+        {
+            var definition = (BlockTableRecord)transaction.GetObject(reference.IsDynamicBlock
+                ? reference.DynamicBlockTableRecord : reference.BlockTableRecord, OpenMode.ForRead);
+            blockName = definition.Name;
+            foreach (ObjectId id in reference.AttributeCollection)
+                if (id.IsValid && !id.IsErased && transaction.GetObject(id, OpenMode.ForRead) is AttributeReference a)
+                    attributes[a.Tag] = (a.TextString ?? "")[..Math.Min(160, (a.TextString ?? "").Length)];
+        }
+        string? text = entity switch { DBText t => t.TextString, MText t => t.Contents,
+            Dimension d => d.DimensionText, _ => null };
+        if (text?.Length > 200) text = text[..200];
+        double[]? bounds = null;
+        try { var b = entity.GeometricExtents; bounds = [b.MinPoint.X, b.MinPoint.Y, b.MaxPoint.X, b.MaxPoint.Y]; }
+        catch (Autodesk.AutoCAD.Runtime.Exception) { }
+        return new { handle = entity.Handle.ToString(), source = entity.Layer,
+            type = entity.GetRXClass().DxfName, context = context.ToString().ToLowerInvariant(),
+            owner = owner.Name, block_name = blockName, attributes, text, bounds,
+            geometry = context == EntityContext.Block ? null : SampleGeometry(entity),
+            protected_reason = protectedReason ?? (owner.IsFromExternalReference || owner.IsFromOverlayReference ? "xref_definition" : null),
+            color = entity.Color.ColorIndex, linetype = entity.Linetype, lineweight = (int)entity.LineWeight };
+    }
+
     private static bool HasOverride(Entity entity) => !entity.Color.IsByLayer ||
         !entity.Linetype.Equals("ByLayer", StringComparison.OrdinalIgnoreCase) || entity.LineWeight != LineWeight.ByLayer;
 
@@ -553,7 +584,8 @@ public sealed class Commands
                 var points = new List<double[]>(count);
                 for (var i = 0; i < count; i++) points.Add(Point(polyline.GetPoint2dAt(i)));
                 return new Dictionary<string, object?> { ["kind"] = "polyline", ["points"] = points,
-                    ["closed"] = polyline.Closed, ["truncated"] = polyline.NumberOfVertices > count };
+                    ["closed"] = polyline.Closed, ["truncated"] = polyline.NumberOfVertices > count,
+                    ["has_bulges"] = Enumerable.Range(0, polyline.NumberOfVertices).Any(i => Math.Abs(polyline.GetBulgeAt(i)) > 1e-10) };
             }
             case Circle circle:
                 return new Dictionary<string, object?> { ["kind"] = "circle", ["center"] = Point(circle.Center), ["radius"] = circle.Radius };

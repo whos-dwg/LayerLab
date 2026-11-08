@@ -94,6 +94,14 @@ Output: `StandardizedDxf` + `MappingJson` + `ValidationJson`.
 
 ## Native DWG validation: `dwg-layer-validation/v1`
 
-A PASS report records source/output SHA-256 values, a two-process `save_reopen` result, entity counts, non-layer signatures, mapped-entity counts by context, preserved XREF counts, verified target layers, and the policies used for block definitions and entity overrides.
+A PASS report records source/output SHA-256 values from the three-process write → cleanup → reopen-validation workflow, entity counts, non-layer signatures, mapped-entity counts by context, preserved XREF counts, verified target layers, verified removal of unreferenced mapped source layers, and the policies used for block definitions and entity overrides.
 
 Native scope is `model_paper_and_editable_block_definitions`. XREF definitions and dependent layers are preserved. Entity color, linetype, and lineweight overrides remain unchanged. A failed validation must not leave a standardized DWG available as a successful output.
+
+## Optional DWS validation: `dws-layer-translation-validation/v1`
+
+The reusable DWS is an additional output only after the primary native DWG has passed `dwg-layer-validation/v1`. Its report records the source and DWS SHA-256 values, `actual_autocad_load: true`, Layer Translator settings, mapped source and target counts, entity counts before/after, verified mapped entities, target-layer property verification, verified removal of mapped source layers, and the validation policy.
+
+Acceptance requires a real AutoCAD 2026 desktop `acet-laytrans` load and apply on a disposable source copy, followed by Save/Reopen verification in a fresh Core Console process. File existence or managed-code inspection of the DWS alone is insufficient. Any DWS failure leaves the primary DWG status as PASS and removes the unverified DWS.
+
+A reusable DWS is available only for complete whole-layer decisions. Object-level exceptions cannot be represented by AutoCAD Layer Translator and therefore fail this optional stage without downgrading the verified DWG.

@@ -1,10 +1,11 @@
-"""Static safety contracts for the two-process native DWG writer."""
+"""Static safety contracts for the staged native DWG writer."""
 from pathlib import Path
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "src/dwg-layer-standardizer/integrations/autocad-2026-native/NativeDwgCommands.cs"
+SCRIPT = ROOT / "src/dwg-layer-standardizer/integrations/autocad-2026-native/run-native-convert.ps1"
 
 
 class NativeWriterContractTests(unittest.TestCase):
@@ -14,18 +15,43 @@ class NativeWriterContractTests(unittest.TestCase):
         cls.writer = cls.source.split('[CommandMethod("LAYERLABCONVERTNATIVE"', 1)[1].split(
             '[CommandMethod("LAYERLABVALIDATENATIVE"', 1
         )[0]
-        cls.validator = cls.source.split('[CommandMethod("LAYERLABVALIDATENATIVE"', 1)[1]
+        after_writer = cls.source.split('[CommandMethod("LAYERLABVALIDATENATIVE"', 1)[1]
+        cls.validator = after_writer.split('[CommandMethod("LAYERLABCLEANUPMAPPEDSOURCES"', 1)[0]
+        cls.cleanup = cls.source.split('[CommandMethod("LAYERLABCLEANUPMAPPEDSOURCES"', 1)[1].split(
+            '[CommandMethod("LAYERLABCREATEDWS"', 1
+        )[0]
+        cls.script = SCRIPT.read_text(encoding="utf-8")
 
     def test_writer_does_not_rescan_mutated_database(self):
         self.assertEqual(self.writer.count("CaptureDatabase(database)"), 1)
         self.assertIn('Trace("verification:deferred-to-save-reopen")', self.writer)
         self.assertNotIn("snapshot:in-memory-after", self.writer)
+        self.assertNotIn("database.Purge", self.writer)
 
     def test_reopen_process_remains_the_verification_authority(self):
         self.assertIn("var reopened = CaptureDatabase(document.Database);", self.validator)
         self.assertIn("VerifyExpectedLayers(reopened, expectation.ExpectedLayers);", self.validator)
         self.assertIn("VerifyTargetLayers(document.Database, standard, expectation.UsedTargets);", self.validator)
         self.assertIn("reopened.NonLayerSha256.Equals(expectation.NonLayerSha256", self.validator)
+
+    def test_mapped_source_layers_are_purged_and_verified_absent(self):
+        self.assertIn("RemoveMappedSourceLayers", self.source)
+        self.assertNotIn("database.Purge", self.source)
+        self.assertIn("layer.Erase()", self.source)
+        self.assertIn('Trace($"cleanup:erase:start:{name}")', self.source)
+        self.assertIn('Trace("cleanup:bounded-removal-verified")', self.source)
+        self.assertIn('Trace("cleanup:pass")', self.cleanup)
+        self.assertIn("VerifyRemovedLayers(document.Database, expectation.RemovedSourceLayers)", self.validator)
+        self.assertIn("removed_source_layers_verified", self.validator)
+        self.assertIn("retainedByObjectDecision", self.source)
+
+    def test_cleanup_runs_in_a_fresh_process_before_final_validation(self):
+        self.assertIn("cleanup-mapped-sources.generated.scr", self.script)
+        self.assertIn("LAYERLABCLEANUPMAPPEDSOURCES", self.script)
+        cleanup = self.script.index("-SuccessMarker 'cleanup:pass'")
+        validation = self.script.index("-SuccessMarker 'validate:pass'")
+        self.assertLess(cleanup, validation)
+        self.assertIn("Wait-Process -Id $process.Id -Timeout 20", self.script)
 
     def test_expectation_and_validation_record_the_policy(self):
         self.assertGreaterEqual(

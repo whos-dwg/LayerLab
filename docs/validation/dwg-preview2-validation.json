@@ -1,0 +1,55 @@
+{
+  "schema": "dwg-layer-validation/v1",
+  "status": "PASS",
+  "engine": {
+    "application": "AutoCAD 2026",
+    "adapter": "dwg-layer-standardizer/native-writer-v1"
+  },
+  "source": {
+    "path": "demo_input.dwg",
+    "sha256": "A25CF03145E79CBD3853811A3A85CD13913EA24E4FE5400428A469A5B2DF5934",
+    "unchanged": true
+  },
+  "output": {
+    "path": "demo_input_standardized.dwg",
+    "sha256": "4466BE4020DFFD3285B8151A50F9DD139AC21F532394387A19200C78A8B7AA76",
+    "save_reopen": true,
+    "dwg_version": "AC1032"
+  },
+  "scope": "model_paper_and_editable_block_definitions",
+  "xref_policy": "preserve",
+  "generated_block_policy": "verify_regenerated_dimension_anonymous_block_non_layer_content",
+  "entity_override_policy": "preserve",
+  "verification_policy": "independent_save_reopen_process",
+  "entity_count_before": 18,
+  "entity_count_after": 18,
+  "non_layer_signature_before": "1A6566DC0C594911D63CE6A481B659A47C234626EB5FD934D9FD633E341F2E80",
+  "non_layer_signature_after": "1A6566DC0C594911D63CE6A481B659A47C234626EB5FD934D9FD633E341F2E80",
+  "non_layer_signature_match": true,
+  "generated_dimension_block_entity_count_before": 0,
+  "generated_dimension_block_entity_count_after": 0,
+  "generated_dimension_block_non_layer_signature_before": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "generated_dimension_block_non_layer_signature_after": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "generated_dimension_block_non_layer_signature_match": true,
+  "mapped_entities": 18,
+  "mapped_by_context": {
+    "model": 17,
+    "block_definition": 1
+  },
+  "xref_entities_preserved": 0,
+  "generated_dimension_block_entities_verified": 0,
+  "target_layers_verified": [
+    "STD-ANNOTATION",
+    "STD-DOOR",
+    "STD-FURNITURE",
+    "STD-WALL"
+  ],
+  "removed_source_layers_verified": [
+    "A-DOOR",
+    "A-TEXT",
+    "A-WALL",
+    "MISC-05",
+    "WALL-NEW"
+  ],
+  "checked_at": "2026-11-09T00:54:33.3554050+08:00"
+}

@@ -1,6 +1,6 @@
 ---
 name: dwg-layer-standardizer
-description: Inspect, review, and standardize native AutoCAD DWG layers with content evidence, human-approved mappings, two-process Save/Reopen validation, and auditable outputs. DXF remains a compatibility path.
+description: Inspect, review, and standardize native AutoCAD DWG layers with content evidence, human-approved mappings, staged Save/Reopen validation, and auditable outputs. DXF remains a compatibility path.
 metadata:
   short-description: Review and standardize DWG/DXF layers
 ---
@@ -30,7 +30,7 @@ DWG processing requires AutoCAD 2026 Core Console. Never route native DWG throug
 
 - Use the unified CLI for health, scan, rescore, and conversion. The CLI routes DWG to the native adapter and never through `ezdxf`.
 - The native writer maps model space, paper space, and editable block definitions. It preserves XREF content and entity-level color/linetype/lineweight overrides.
-- Conversion uses two separate AutoCAD processes: one writes the new DWG; a second reopens that exact output and verifies entity handles, types, non-layer signatures, mapped layers, target-layer properties, counts, and source integrity.
+- Conversion uses three separate AutoCAD processes: one writes the mapped DWG, a second reopens the stable copy and removes mapped source layers that are no longer referenced, and a third reopens that exact output to verify entity handles, types, non-layer signatures, mapped layers, removed source layers, target-layer properties, counts, and source integrity.
 
 ```powershell
 python "<skill-directory>\scripts\run.py" health

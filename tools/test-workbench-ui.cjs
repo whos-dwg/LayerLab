@@ -35,6 +35,7 @@ async function boot(options={}) {
   w.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){}});
   w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
   w.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new w.Event('close'));};
+  if(options.savePicker)w.showSaveFilePicker=options.savePicker;
   if(options.storage)for(const [key,value]of Object.entries(options.storage))w.localStorage.setItem(key,value);
   if(options.storageFailure)w.Storage.prototype.setItem=function(){throw new w.DOMException('Storage quota exceeded','QuotaExceededError');};
   w.fetch=async(url,init={})=>{
@@ -46,8 +47,10 @@ async function boot(options={}) {
     else if(url==='/api/jobs/'+JOB+'/files/inventory.json'){
       if(options.expiredJob)throw Error('Missing job');value=options.serverInventory||inventory;
     } else if(url==='/api/jobs/'+JOB+'/convert'&&options.convertResult)value=options.convertResult;
+    else if(url==='/api/jobs/'+JOB+'/dws'&&options.dwsResult)value=options.dwsResult;
+    else if(String(url).startsWith('/downloads/'))value={};
     else throw Error('Unexpected API request: '+url);
-    return {ok:true,json:async()=>copy(value)};
+    return {ok:true,json:async()=>copy(value),blob:async()=>new w.Blob(['fixture'])};
   };
   for(const file of ['workbench-core.js','preview-hover.js','app.js'])w.eval(fs.readFileSync(path.join(ui,file),'utf8'));
   await until(()=>!w.document.querySelector('#demo-btn').disabled,'initialize');
@@ -218,16 +221,37 @@ test('default standard label becomes the imported filename and survives undo and
 
 test('verified DXF and DWG success messages match their download and save actions',async()=>{
   for(const format of ['DXF','DWG']) {
-    const result={output:'verified.'+format.toLowerCase(),download_prefix:'/downloads/',mapping:'mapping.json',validation:'validation.json',report:{status:'PASS',entity_count_before:70,entity_count_after:70}};
+    const result={output:'verified.'+format.toLowerCase(),download_prefix:'/downloads/',mapping:'mapping.json',validation:'validation.json',dws_endpoint:'/api/jobs/'+JOB+'/dws',report:{status:'PASS',entity_count_before:70,entity_count_after:70,removed_source_layers_verified:format==='DWG'?['OLD-WALL','OLD-DOOR']:[]}};
     const p=await boot({demoInventory:{...copy(inventory),filetype:format},convertResult:result});
     try {
       await p.load();p.$('#select-filtered').click();p.$('#bulk-keep').click();
+      assert.equal(p.$('#dws-btn').disabled,true);
       assert.equal(p.$('#convert-btn').disabled,false);p.$('#convert-btn').click();
       await until(()=>!p.$('#results').hidden,'verified result');
       const message=p.$('#toast').textContent;
-      if(format==='DXF') {assert.match(message,/DXF.*下載/);assert.doesNotMatch(message,/DWG/);assert.match(p.$('#results a').textContent,/verified.dxf/);}
-      else {assert.match(message,/DWG 儲存位置/);assert.match(p.$('#results button').textContent,/儲存 DWG/);}
+      if(format==='DXF') {assert.match(message,/DXF.*下載/);assert.doesNotMatch(message,/DWG/);assert.match(p.$('#results a').textContent,/verified.dxf/);assert.match(p.$('#dws-btn').textContent,/僅適用 DWG/);}
+      else {
+        const labels=[...p.w.document.querySelectorAll('#results button')].map(node=>node.textContent);
+        assert.match(message,/DWG 儲存位置/);assert.ok(labels.some(label=>/儲存標準化 DWG/.test(label)));
+        assert.equal(p.$('#dws-btn').disabled,false);assert.equal(p.$('#dws-btn').textContent,'匯出 DWS');
+        assert.match(p.$('#results p').textContent,/已移除 2 個映射來源圖層/);
+      }
       assert.deepEqual(p.errors,[]);
     } finally {p.close();}
   }
+});
+
+test('optional DWS action preserves the verified DWG result on DWS failure',async()=>{
+  const result={output:'verified_standardized.dwg',download_prefix:'/downloads/',mapping:'mapping.json',validation:'validation.json',dws_endpoint:'/api/jobs/'+JOB+'/dws',report:{status:'PASS',entity_count_before:70,entity_count_after:70}};
+  const dwsResult={status:'FAILED',primary_dwg_status:'PASS',message:'DWG 已完成、DWS 未產生。',detail:'AutoCAD load rejected fixture'};
+  const p=await boot({demoInventory:{...copy(inventory),filetype:'DWG'},convertResult:result,dwsResult});
+  try {
+    await p.load();p.$('#select-filtered').click();p.$('#bulk-keep').click();p.$('#convert-btn').click();
+    await until(()=>!p.$('#results').hidden,'verified DWG result');
+    const dwsButton=p.$('#dws-btn');
+    dwsButton.click();await until(()=>/DWS 未產生/.test(p.$('.dws-status').textContent),'DWS failure status');
+    assert.match(p.$('#results strong').textContent,/DWG.*Save\/Reopen/);
+    assert.ok([...p.w.document.querySelectorAll('#results button')].some(node=>/儲存標準化 DWG/.test(node.textContent)));
+    assert.deepEqual(p.errors,[]);
+  } finally {p.close();}
 });

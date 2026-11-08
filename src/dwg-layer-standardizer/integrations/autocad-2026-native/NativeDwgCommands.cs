@@ -85,6 +85,7 @@ public sealed class NativeDwgCommands
                 xref_entities_preserved = execution.XrefEntitiesPreserved,
                     generated_dimension_block_entities_expected = execution.GeneratedDimensionBlockEntitiesExpected,
                 used_targets = execution.UsedTargets.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray(),
+                removed_source_layers = execution.RemovedSourceLayers.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray(),
                 verification_policy = "independent_save_reopen_process",
                 dwg_version = database.OriginalFileVersion.ToString()
             });
@@ -131,6 +132,8 @@ public sealed class NativeDwgCommands
             Trace("validate:expected-layers-pass");
             VerifyTargetLayers(document.Database, standard, expectation.UsedTargets);
             Trace("validate:target-layers-pass");
+            VerifyRemovedLayers(document.Database, expectation.RemovedSourceLayers);
+            Trace("validate:removed-source-layers-pass");
             if (reopened.EntityCount != expectation.EntityCount)
                 throw new InvalidOperationException($"Entity count changed after Save/Reopen ({expectation.EntityCount} -> {reopened.EntityCount}).");
             Trace("validate:entity-count-pass");
@@ -205,6 +208,7 @@ public sealed class NativeDwgCommands
                 xref_entities_preserved = expectation.XrefEntitiesPreserved,
                 generated_dimension_block_entities_verified = expectation.GeneratedDimensionBlockEntitiesExpected,
                 target_layers_verified = expectation.UsedTargets.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray(),
+                removed_source_layers_verified = expectation.RemovedSourceLayers.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray(),
                 checked_at = DateTimeOffset.Now.ToString("O")
             });
             WriteJsonNew(receiptPath, new
@@ -218,6 +222,7 @@ public sealed class NativeDwgCommands
                 block_definition_policy = "map_editable_preserve_xref_verify_regenerated_dimension_blocks",
                 entity_property_override_policy = "preserve",
                 actions = mapping.Actions,
+                entity_actions = mapping.EntityActions,
                 output_file = Path.GetFileName(outputPath),
                 output_sha256 = outputHash,
                 validation_file = Path.GetFileName(validationPath)
@@ -234,6 +239,382 @@ public sealed class NativeDwgCommands
         }
     }
 
+    [CommandMethod("LAYERLABCLEANUPMAPPEDSOURCES", CommandFlags.Session)]
+    public void CleanupMappedSources()
+    {
+        Trace("cleanup:start");
+        var document = AcadApplication.DocumentManager.MdiActiveDocument
+            ?? throw new InvalidOperationException("No active AutoCAD document.");
+        var sourcePath = RequireExistingFile("LAYERLAB_SOURCE_PATH");
+        var outputPath = RequireExistingFile("LAYERLAB_OUTPUT_PATH");
+        var mappingPath = RequireExistingFile("LAYERLAB_MAPPING_PATH");
+        var expectationPath = RequireExistingFile("LAYERLAB_EXPECTATION_OUT");
+        try
+        {
+            if (!Path.GetFullPath(document.Name).Equals(outputPath, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Cleanup must run against the exact written output DWG.");
+            var sourceHash = ComputeSha256(sourcePath);
+            var mapping = ReadMapping(mappingPath);
+            var expectation = ReadExpectation(expectationPath);
+            if (!sourceHash.Equals(mapping.SourceSha256, StringComparison.OrdinalIgnoreCase) ||
+                !sourceHash.Equals(expectation.SourceSha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Source hash does not match the cleanup expectation.");
+            var recomputed = RemovableMappedSources(mapping, expectation.UsedTargets)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (!recomputed.SetEquals(expectation.RemovedSourceLayers))
+                throw new InvalidDataException("Mapped source cleanup set does not match the write expectation.");
+
+            using var documentLock = document.LockDocument();
+            RemoveMappedSourceLayers(document.Database, mapping, expectation.RemovedSourceLayers);
+            Trace($"cleanup:source-layers-removed:{expectation.RemovedSourceLayers.Count}");
+            document.Database.SaveAs(outputPath, true, document.Database.OriginalFileVersion,
+                document.Database.SecurityParameters);
+            if (!ComputeSha256(sourcePath).Equals(sourceHash, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Source DWG changed during mapped-source cleanup.");
+            Trace("cleanup:pass");
+            document.Editor.WriteMessage(
+                $"\nLAYERLAB_DWG_CLEANUP_OK removed={expectation.RemovedSourceLayers.Count} output={outputPath}");
+        }
+        catch
+        {
+            Trace("cleanup:fail");
+            throw;
+        }
+    }
+
+    [CommandMethod("LAYERLABCREATEDWS", CommandFlags.Session)]
+    public void CreateDws()
+    {
+        Trace("dws:create:start");
+        var document = AcadApplication.DocumentManager.MdiActiveDocument
+            ?? throw new InvalidOperationException("No active AutoCAD document.");
+        var mappingPath = RequireExistingFile("LAYERLAB_MAPPING_PATH");
+        var standardPath = RequireExistingFile("LAYERLAB_STANDARD_PATH");
+        var outputPath = RequireNewPath("LAYERLAB_DWS_OUTPUT", ".dws");
+        try
+        {
+            var mapping = ReadMapping(mappingPath);
+            var standard = ReadStandard(standardPath);
+            var mapped = DwsLayerMappings(mapping, standard);
+            using var documentLock = document.LockDocument();
+            using var dws = new Database(true, true);
+            CloneRequiredLinetypes(document.Database, dws,
+                mapped.Keys.Select(name => standard.Layers.Single(layer =>
+                    layer.Name.Equals(name, StringComparison.OrdinalIgnoreCase))).ToList());
+            using (var transaction = dws.TransactionManager.StartTransaction())
+            {
+                EnsureDwsTargets(dws, transaction, standard, mapped);
+                transaction.Commit();
+            }
+            dws.SaveAs(outputPath, DwgVersion.Current);
+            VerifyDwsFile(outputPath, mapping, standard);
+            Trace("dws:create:pass");
+            document.Editor.WriteMessage($"\nLAYERLAB_DWS_CREATE_OK output={outputPath}");
+        }
+        catch
+        {
+            DeleteIfPresent(outputPath);
+            throw;
+        }
+    }
+
+    [CommandMethod("LAYERLABPREPAREDWSVALIDATION", CommandFlags.Session)]
+    public void PrepareDwsValidation()
+    {
+        Trace("dws:prepare:start");
+        var document = AcadApplication.DocumentManager.MdiActiveDocument
+            ?? throw new InvalidOperationException("No active AutoCAD document.");
+        var sourcePath = RequireExistingFile("LAYERLAB_SOURCE_PATH");
+        var mappingPath = RequireExistingFile("LAYERLAB_MAPPING_PATH");
+        var standardPath = RequireExistingFile("LAYERLAB_STANDARD_PATH");
+        var dwsPath = RequireExistingFile("LAYERLAB_DWS_OUTPUT");
+        var expectationPath = RequireNewPath("LAYERLAB_DWS_EXPECTATION_OUT", ".json");
+        try
+        {
+            var mapping = ReadMapping(mappingPath);
+            var standard = ReadStandard(standardPath);
+            var sourceHash = ComputeSha256(sourcePath);
+            if (!mapping.SourceSha256.Equals(sourceHash, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("The source DWG hash no longer matches the approved mapping.");
+            var mapped = DwsLayerMappings(mapping, standard);
+            VerifyDwsFile(dwsPath, mapping, standard);
+            using var documentLock = document.LockDocument();
+            ValidateDwsSourceMapping(document.Database, mapping, standard);
+            var before = CaptureDatabase(document.Database);
+            var actions = mapping.Actions.ToDictionary(action => action.Source, StringComparer.OrdinalIgnoreCase);
+            var expectedLayers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var mappedEntities = 0;
+            foreach (var pair in before.Entities)
+            {
+                var expected = pair.Value.Layer;
+                if (actions.TryGetValue(pair.Value.Layer, out var action) &&
+                    action.Decision.Equals("map", StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(action.Target))
+                {
+                    expected = action.Target;
+                    if (!expected.Equals(pair.Value.Layer, StringComparison.OrdinalIgnoreCase)) mappedEntities++;
+                }
+                expectedLayers[pair.Key] = expected;
+            }
+            WriteJsonNew(expectationPath, new
+            {
+                schema = "dws-layer-translation-expectation/v1",
+                source_sha256 = sourceHash,
+                dws_sha256 = ComputeSha256(dwsPath),
+                entity_count = before.EntityCount,
+                non_layer_sha256 = before.NonLayerSha256,
+                expected_layers = expectedLayers,
+                expected_non_layer_signatures = before.Entities.ToDictionary(
+                    pair => pair.Key, pair => pair.Value.NonLayerSignature, StringComparer.OrdinalIgnoreCase),
+                mapped_entities = mappedEntities,
+                mapped_sources = mapping.Actions.Count(action => action.Decision.Equals("map", StringComparison.OrdinalIgnoreCase)),
+                used_targets = mapped.Keys.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray(),
+                removed_source_layers = RemovableMappedSources(mapping, mapped.Keys),
+                validation_policy = "actual_autocad_acet_laytrans_load_save_reopen_on_disposable_source_copy"
+            });
+            Trace("dws:prepare:pass");
+        }
+        catch
+        {
+            DeleteIfPresent(expectationPath);
+            throw;
+        }
+    }
+
+    [CommandMethod("LAYERLABVALIDATEDWS", CommandFlags.Session)]
+    public void ValidateDws()
+    {
+        Trace("dws:validate:start");
+        var document = AcadApplication.DocumentManager.MdiActiveDocument
+            ?? throw new InvalidOperationException("No active AutoCAD document.");
+        var sourcePath = RequireExistingFile("LAYERLAB_SOURCE_PATH");
+        var mappingPath = RequireExistingFile("LAYERLAB_MAPPING_PATH");
+        var standardPath = RequireExistingFile("LAYERLAB_STANDARD_PATH");
+        var dwsPath = RequireExistingFile("LAYERLAB_DWS_OUTPUT");
+        var expectationPath = RequireExistingFile("LAYERLAB_DWS_EXPECTATION_OUT");
+        var loadMarkerPath = RequireExistingFile("LAYERLAB_DWS_LOAD_MARKER");
+        var validationPath = RequireNewPath("LAYERLAB_DWS_VALIDATION_OUT", ".json");
+        try
+        {
+            var loadResult = File.ReadAllText(loadMarkerPath).Trim();
+            if (!"LAYERLAB_DWS_LOAD_PASS".Equals(loadResult, StringComparison.Ordinal))
+                throw new InvalidOperationException("AutoCAD acet-laytrans did not report a successful DWS load.");
+            Trace("dws:validate:load-marker-pass");
+            var mapping = ReadMapping(mappingPath);
+            var standard = ReadStandard(standardPath);
+            var expectation = ReadDwsExpectation(expectationPath);
+            if (!ComputeSha256(sourcePath).Equals(expectation.SourceSha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Source DWG changed during DWS validation.");
+            if (!ComputeSha256(dwsPath).Equals(expectation.DwsSha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("DWS changed between creation and AutoCAD load validation.");
+            VerifyDwsFile(dwsPath, mapping, standard);
+            Trace("dws:validate:dws-file-pass");
+            using var documentLock = document.LockDocument();
+            var after = CaptureDatabase(document.Database);
+            Trace("dws:validate:snapshot-pass");
+            VerifyExpectedLayers(after, expectation.ExpectedLayers);
+            Trace("dws:validate:expected-layers-pass");
+            VerifyTargetLayers(document.Database, standard, expectation.UsedTargets);
+            Trace("dws:validate:target-layers-pass");
+            VerifyRemovedLayers(document.Database, expectation.RemovedSourceLayers);
+            Trace("dws:validate:removed-source-layers-pass");
+            if (after.EntityCount != expectation.EntityCount)
+                throw new InvalidOperationException("Entity count changed while validating the DWS translation.");
+            if (!after.NonLayerSha256.Equals(expectation.NonLayerSha256, StringComparison.Ordinal))
+                throw new InvalidOperationException("Non-layer entity content changed while validating the DWS translation.");
+            WriteJsonNew(validationPath, new
+            {
+                schema = "dws-layer-translation-validation/v1",
+                status = "PASS",
+                engine = new { application = "AutoCAD 2026", method = "acet-laytrans" },
+                source = new { path = Path.GetFileName(sourcePath), sha256 = expectation.SourceSha256, unchanged = true },
+                dws = new { path = Path.GetFileName(dwsPath), sha256 = expectation.DwsSha256,
+                    actual_autocad_load = true, laytrans_settings = 4 },
+                mapping = new { source_layers = expectation.MappedSources,
+                    target_layers = expectation.UsedTargets.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray() },
+                entity_count_before = expectation.EntityCount,
+                entity_count_after = after.EntityCount,
+                mapped_entities_verified = expectation.MappedEntities,
+                target_layer_properties_verified = true,
+                removed_source_layers_verified = expectation.RemovedSourceLayers.OrderBy(
+                    name => name, StringComparer.OrdinalIgnoreCase).ToArray(),
+                entity_overrides_policy = "preserve",
+                block_policy = "translate_editable_blocks",
+                validation_policy = "actual_autocad_acet_laytrans_load_save_reopen_on_disposable_source_copy",
+                checked_at = DateTimeOffset.Now.ToString("O")
+            });
+            Trace("dws:validate:pass");
+            document.Editor.WriteMessage($"\nLAYERLAB_DWS_VALIDATE_OK output={dwsPath}");
+        }
+        catch
+        {
+            DeleteIfPresent(validationPath);
+            throw;
+        }
+    }
+
+    private static Dictionary<string, List<string>> DwsLayerMappings(MappingDocument mapping,
+        StandardDocument standard)
+    {
+        if (mapping.EntityActions.Count != 0)
+            throw new InvalidDataException(
+                "A reusable DWS cannot represent object-level mapping decisions; use the verified DWG instead.");
+        var definitions = standard.Layers.ToDictionary(layer => layer.Name, StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var action in mapping.Actions)
+        {
+            if (action.Decision.Equals("keep", StringComparison.OrdinalIgnoreCase))
+            {
+                if (action.Target is not null)
+                    throw new InvalidDataException($"A kept DWS source must not name a target: {action.Source}");
+                continue;
+            }
+            if (!action.Decision.Equals("map", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"DWS mapping has an unapproved decision: {action.Source}");
+            if (string.IsNullOrWhiteSpace(action.Target) || !definitions.ContainsKey(action.Target))
+                throw new InvalidDataException($"DWS target is outside the approved standard: {action.Target}");
+            if (!result.TryGetValue(action.Target, out var sources)) result[action.Target] = sources = new List<string>();
+            sources.Add(action.Source);
+        }
+        if (result.Count == 0) throw new InvalidDataException("The approved mapping has no reusable layer translations.");
+        return result;
+    }
+
+    private static void ValidateDwsSourceMapping(Database database, MappingDocument mapping,
+        StandardDocument standard)
+    {
+        var actions = mapping.Actions.ToDictionary(action => action.Source, StringComparer.OrdinalIgnoreCase);
+        var definitions = standard.Layers.ToDictionary(layer => layer.Name, StringComparer.OrdinalIgnoreCase);
+        using var transaction = database.TransactionManager.StartOpenCloseTransaction();
+        var table = (LayerTable)transaction.GetObject(database.LayerTableId, OpenMode.ForRead);
+        var sourceLayers = new Dictionary<string, LayerTableRecord>(StringComparer.OrdinalIgnoreCase);
+        foreach (ObjectId id in table)
+        {
+            var layer = (LayerTableRecord)transaction.GetObject(id, OpenMode.ForRead);
+            sourceLayers[layer.Name] = layer;
+        }
+        if (actions.Count != sourceLayers.Count || sourceLayers.Keys.Any(name => !actions.ContainsKey(name)))
+            throw new InvalidDataException("Approved DWS mapping must contain every source layer exactly once.");
+        foreach (var pair in sourceLayers)
+        {
+            var action = actions[pair.Key];
+            if (IsProtected(pair.Value) &&
+                (!action.Decision.Equals("keep", StringComparison.OrdinalIgnoreCase) || action.Target is not null))
+                throw new InvalidDataException($"Protected DWS source must be kept: {pair.Key}");
+            if (action.Decision.Equals("map", StringComparison.OrdinalIgnoreCase) &&
+                (string.IsNullOrWhiteSpace(action.Target) || !definitions.ContainsKey(action.Target)))
+                throw new InvalidDataException($"DWS target is outside the approved standard: {action.Target}");
+        }
+    }
+
+    private static string[] RemovableMappedSources(MappingDocument mapping, IEnumerable<string> usedTargets)
+    {
+        var targets = usedTargets.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var retainedByObjectDecision = mapping.EntityActions.Where(action =>
+                action.Decision.Equals("keep", StringComparison.OrdinalIgnoreCase) ||
+                (action.Decision.Equals("map", StringComparison.OrdinalIgnoreCase) &&
+                 action.Target?.Equals(action.Source, StringComparison.OrdinalIgnoreCase) == true))
+            .Select(action => action.Source)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return mapping.Actions.Where(action =>
+                action.Decision.Equals("map", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(action.Target) &&
+                !action.Source.Equals(action.Target, StringComparison.OrdinalIgnoreCase) &&
+                !targets.Contains(action.Source) &&
+                !retainedByObjectDecision.Contains(action.Source))
+            .Select(action => action.Source)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static void CloneRequiredLinetypes(Database source, Database destination,
+        IReadOnlyCollection<StandardLayer> targets)
+    {
+        var ids = new ObjectIdCollection();
+        using (var sourceTransaction = source.TransactionManager.StartOpenCloseTransaction())
+        using (var destinationTransaction = destination.TransactionManager.StartOpenCloseTransaction())
+        {
+            var sourceTable = (LinetypeTable)sourceTransaction.GetObject(source.LinetypeTableId, OpenMode.ForRead);
+            var destinationTable = (LinetypeTable)destinationTransaction.GetObject(destination.LinetypeTableId, OpenMode.ForRead);
+            foreach (var name in targets.Select(target => target.Linetype).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (destinationTable.Has(name)) continue;
+                if (!sourceTable.Has(name)) throw new InvalidDataException($"Verified DWG is missing target linetype: {name}");
+                ids.Add(sourceTable[name]);
+            }
+        }
+        if (ids.Count > 0)
+            source.WblockCloneObjects(ids, destination.LinetypeTableId, new IdMapping(), DuplicateRecordCloning.Ignore, false);
+    }
+
+    private static void EnsureDwsTargets(Database database, Transaction transaction, StandardDocument standard,
+        IReadOnlyDictionary<string, List<string>> mappings)
+    {
+        const string appName = "ACLAYTRANS";
+        var regApps = (RegAppTable)transaction.GetObject(database.RegAppTableId, OpenMode.ForRead);
+        if (!regApps.Has(appName))
+        {
+            regApps.UpgradeOpen();
+            var app = new RegAppTableRecord { Name = appName };
+            regApps.Add(app);
+            transaction.AddNewlyCreatedDBObject(app, true);
+        }
+        var layerTable = (LayerTable)transaction.GetObject(database.LayerTableId, OpenMode.ForRead);
+        var lineTypeTable = (LinetypeTable)transaction.GetObject(database.LinetypeTableId, OpenMode.ForRead);
+        var definitions = standard.Layers.ToDictionary(layer => layer.Name, StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in mappings)
+        {
+            var target = definitions[pair.Key];
+            if (!lineTypeTable.Has(target.Linetype))
+                throw new InvalidDataException($"DWS is missing target linetype: {target.Linetype}");
+            if (layerTable.Has(target.Name))
+                throw new InvalidDataException($"DWS target collides with a built-in layer: {target.Name}");
+            layerTable.UpgradeOpen();
+            var record = new LayerTableRecord
+            {
+                Name = target.Name,
+                Color = Color.FromColorIndex(ColorMethod.ByAci, checked((short)target.Aci)),
+                LinetypeObjectId = lineTypeTable[target.Linetype],
+                LineWeight = (LineWeight)target.Lineweight,
+                IsPlottable = target.Plot
+            };
+            layerTable.Add(record);
+            transaction.AddNewlyCreatedDBObject(record, true);
+            var values = new List<TypedValue> { new((int)DxfCode.ExtendedDataRegAppName, appName) };
+            values.AddRange(pair.Value.OrderBy(source => source, StringComparer.OrdinalIgnoreCase)
+                .Select(source => new TypedValue((int)DxfCode.ExtendedDataAsciiString, source)));
+            using var xdata = new ResultBuffer(values.ToArray());
+            record.XData = xdata;
+        }
+    }
+
+    private static void VerifyDwsFile(string path, MappingDocument mapping, StandardDocument standard)
+    {
+        var expected = DwsLayerMappings(mapping, standard);
+        using var database = new Database(false, true);
+        database.ReadDwgFile(path, FileOpenMode.OpenForReadAndAllShare, true, "");
+        database.CloseInput(true);
+        using (var transaction = database.TransactionManager.StartOpenCloseTransaction())
+        {
+            var layers = (LayerTable)transaction.GetObject(database.LayerTableId, OpenMode.ForRead);
+            foreach (var pair in expected)
+            {
+                if (!layers.Has(pair.Key)) throw new InvalidDataException($"DWS is missing target layer: {pair.Key}");
+                var layer = (LayerTableRecord)transaction.GetObject(layers[pair.Key], OpenMode.ForRead);
+                using var xdata = layer.GetXDataForApplication("ACLAYTRANS");
+                if (xdata is null) throw new InvalidDataException($"DWS target has no ACLAYTRANS mapping: {pair.Key}");
+                var actual = xdata.AsArray().Where(value => value.TypeCode == (int)DxfCode.ExtendedDataAsciiString)
+                    .Select(value => Convert.ToString(value.Value, CultureInfo.InvariantCulture) ?? "")
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                if (!actual.SetEquals(pair.Value))
+                    throw new InvalidDataException($"DWS source mappings do not match the approved plan for {pair.Key}.");
+            }
+        }
+        VerifyTargetLayers(database, standard, expected.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase));
+        if (CaptureDatabase(database).EntityCount != 0)
+            throw new InvalidDataException("DWS must not contain source drawing entities.");
+    }
+
     private static ExecutionResult ApplyMapping(Database database, MappingDocument mapping, StandardDocument standard,
         DatabaseSnapshot before)
     {
@@ -242,6 +623,8 @@ public sealed class NativeDwgCommands
         var standardLayers = standard.Layers.ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
         var actions = mapping.Actions.ToDictionary(x => x.Source, StringComparer.OrdinalIgnoreCase);
         var usedTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var entityActions = mapping.EntityActions.ToDictionary(x => x.Handle, StringComparer.OrdinalIgnoreCase);
+        var consumed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var expectedLayers = before.Entities.ToDictionary(pair => pair.Key, pair => pair.Value.Layer,
             StringComparer.OrdinalIgnoreCase);
         var mappedByContext = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -279,6 +662,23 @@ public sealed class NativeDwgCommands
         }
         Trace($"apply:actions-verified:targets={usedTargets.Count}");
 
+        foreach (var action in entityActions.Values)
+        {
+            if (!before.Entities.TryGetValue(action.Handle, out var snapshot) ||
+                !snapshot.Layer.Equals(action.Source, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"Unknown or stale object: {action.Handle}");
+            if (!sourceLayers.TryGetValue(action.Source, out var source) || source.Protected)
+                throw new InvalidDataException($"Protected object cannot be overridden: {action.Handle}");
+            if (action.Decision != "map" && action.Decision != "keep")
+                throw new InvalidDataException("Object decision must be map or keep.");
+            if (action.Decision == "map")
+            {
+                if (action.Target is null || !standardLayers.ContainsKey(action.Target))
+                    throw new InvalidDataException($"Object target outside standard: {action.Target}");
+                usedTargets.Add(action.Target);
+            }
+        }
+
         EnsureTargetLayers(database, transaction, usedTargets.Select(name => standardLayers[name]).ToList());
         Trace("apply:targets-ready");
         var blockTable = (BlockTable)transaction.GetObject(database.BlockTableId, OpenMode.ForRead);
@@ -301,22 +701,79 @@ public sealed class NativeDwgCommands
             {
                 if (!entityId.IsValid || entityId.IsErased) continue;
                 if (transaction.GetObject(entityId, OpenMode.ForRead, false) is not Entity readEntity) continue;
-                if (!actions.TryGetValue(readEntity.Layer, out var action) ||
-                    !action.Decision.Equals("map", StringComparison.OrdinalIgnoreCase) ||
-                    string.IsNullOrWhiteSpace(action.Target) ||
-                    action.Target.Equals(readEntity.Layer, StringComparison.OrdinalIgnoreCase)) continue;
+                actions.TryGetValue(readEntity.Layer, out var action);
+                var target = action?.Decision.Equals("map", StringComparison.OrdinalIgnoreCase) == true ? action.Target : null;
+                if (entityActions.TryGetValue(readEntity.Handle.ToString(), out var objectAction))
+                {
+                    if (!block.IsLayout || objectAction.Type != readEntity.GetRXClass().DxfName || objectAction.Context != context)
+                        throw new InvalidDataException($"Object type/context mismatch or shared definition edit: {objectAction.Handle}");
+                    consumed.Add(objectAction.Handle);
+                    target = objectAction.Decision == "map" ? objectAction.Target : null;
+                }
+                if (string.IsNullOrWhiteSpace(target) || target.Equals(readEntity.Layer, StringComparison.OrdinalIgnoreCase)) continue;
                 var entity = (Entity)transaction.GetObject(entityId, OpenMode.ForWrite, false, true);
-                Trace($"apply:entity:{entity.Handle}:{readEntity.Layer}->{action.Target}");
-                entity.Layer = action.Target;
-                expectedLayers[entity.Handle.ToString()] = action.Target;
+                Trace($"apply:entity:{entity.Handle}:{readEntity.Layer}->{target}");
+                entity.Layer = target;
+                expectedLayers[entity.Handle.ToString()] = target;
                 mappedEntities++;
                 mappedByContext[context] = mappedByContext.TryGetValue(context, out var count) ? count + 1 : 1;
             }
         }
+        if (consumed.Count != entityActions.Count)
+            throw new InvalidDataException("Some object decisions were not applied (xref or shared definition).");
+        var removedSourceLayers = RemovableMappedSources(mapping, usedTargets)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        Trace($"apply:source-layers-scheduled-for-cleanup:{removedSourceLayers.Count}");
         transaction.Commit();
         return new ExecutionResult(mappedEntities, mappedByContext, xrefEntitiesPreserved,
             generatedDimensionBlockEntitiesExpected, expectedGeneratedDimensionBlockSha256,
-            expectedGeneratedDimensionBlockSignatures, usedTargets, expectedLayers);
+            expectedGeneratedDimensionBlockSignatures, usedTargets, removedSourceLayers, expectedLayers);
+    }
+
+    private static void RemoveMappedSourceLayers(Database database, MappingDocument mapping,
+        HashSet<string> names)
+    {
+        if (names.Count == 0) return;
+
+        using var transaction = database.TransactionManager.StartTransaction();
+        var layerTable = (LayerTable)transaction.GetObject(database.LayerTableId, OpenMode.ForRead);
+        var current = (LayerTableRecord)transaction.GetObject(database.Clayer, OpenMode.ForRead);
+        if (names.Contains(current.Name))
+        {
+            var action = mapping.Actions.Single(row =>
+                row.Source.Equals(current.Name, StringComparison.OrdinalIgnoreCase));
+            if (string.IsNullOrWhiteSpace(action.Target) || !layerTable.Has(action.Target))
+                throw new InvalidDataException($"Mapped current layer has no valid replacement: {current.Name}");
+            database.Clayer = layerTable[action.Target];
+        }
+
+        // Do not call Database.Purge here. On vendor drawings with thousands of
+        // anonymous block definitions AutoCAD 2026 can access-violate while Purge
+        // walks the entire hard-reference graph, even in a freshly reopened process.
+        // ApplyMapping already reassigned every editable entity and the candidates
+        // exclude protected/identity/object-exception layers. Erase each bounded
+        // candidate directly; AutoCAD still rejects a layer that has any remaining
+        // hard reference, which is a fail-closed outcome rather than a native crash.
+        foreach (var name in names.OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
+        {
+            Trace($"cleanup:erase:start:{name}");
+            var id = layerTable[name];
+            var layer = (LayerTableRecord)transaction.GetObject(id, OpenMode.ForWrite);
+            try
+            {
+                layer.Erase();
+            }
+            catch (Autodesk.AutoCAD.Runtime.Exception exception)
+            {
+                throw new InvalidOperationException(
+                    $"Mapped source layer remains referenced and cannot be removed: {name} ({exception.ErrorStatus})",
+                    exception);
+            }
+            Trace($"cleanup:erase:pass:{name}");
+        }
+        transaction.Commit();
+        VerifyRemovedLayers(database, names);
+        Trace("cleanup:bounded-removal-verified");
     }
 
     private static void EnsureTargetLayers(Database database, Transaction transaction, IReadOnlyCollection<StandardLayer> targets)
@@ -374,6 +831,16 @@ public sealed class NativeDwgCommands
         transaction.Commit();
     }
 
+    private static void VerifyRemovedLayers(Database database, HashSet<string> removedLayers)
+    {
+        using var transaction = database.TransactionManager.StartOpenCloseTransaction();
+        var layerTable = (LayerTable)transaction.GetObject(database.LayerTableId, OpenMode.ForRead);
+        var retained = removedLayers.Where(layerTable.Has).ToArray();
+        if (retained.Length != 0)
+            throw new InvalidOperationException(
+                $"Mapped source layers remain after Save/Reopen: {string.Join(", ", retained)}");
+    }
+
     private static DatabaseSnapshot CaptureDatabase(Database database)
     {
         var entities = new Dictionary<string, EntitySnapshot>(StringComparer.OrdinalIgnoreCase);
@@ -426,7 +893,7 @@ public sealed class NativeDwgCommands
     {
         var builder = new StringBuilder();
         builder.Append(context).Append('|').Append(entity.GetRXClass().DxfName).Append('|');
-        if (entity is not DBText && entity is not MText && entity is not BlockReference)
+        if (entity is not DBText && entity is not MText && entity is not BlockReference && entity is not Viewport)
         {
             try
             {
@@ -442,7 +909,7 @@ public sealed class NativeDwgCommands
         switch (entity)
         {
             case DBText text:
-                builder.Append(text.TextString).Append('|');
+                builder.Append(AuthoritativeText(text, text.TextString, transaction)).Append('|');
                 var textAnchor = text.HorizontalMode == TextHorizontalMode.TextLeft &&
                     text.VerticalMode == TextVerticalMode.TextBase
                     ? text.Position : text.AlignmentPoint;
@@ -454,7 +921,7 @@ public sealed class NativeDwgCommands
                     .Append(NormalizeCoordinate(text.Oblique)).Append('|');
                 break;
             case MText text:
-                builder.Append(text.Contents).Append('|'); AppendPoint(builder, text.Location);
+                builder.Append(AuthoritativeText(text, text.Contents, transaction)).Append('|'); AppendPoint(builder, text.Location);
                 builder.Append((int)text.Attachment).Append('|')
                     .Append(NormalizeCoordinate(text.TextHeight)).Append('|')
                     .Append(NormalizeCoordinate(text.Width)).Append('|')
@@ -462,6 +929,25 @@ public sealed class NativeDwgCommands
                 break;
             case Dimension dimension:
                 builder.Append(dimension.DimensionText).Append('|'); break;
+            case Viewport viewport:
+                builder.Append("VIEWPORT:").Append(viewport.Number).Append('|');
+                // Number 1 is AutoCAD's derived overall paper-space display viewport.
+                // Its extents are regenerated on SaveAs; actual floating viewports retain
+                // authoritative position, size and model camera checks below.
+                if (viewport.Number != 1)
+                {
+                    AppendPoint(builder, viewport.CenterPoint);
+                    AppendPoint(builder, viewport.ViewTarget);
+                    AppendPoint(builder, new Point3d(viewport.ViewDirection.X, viewport.ViewDirection.Y, viewport.ViewDirection.Z));
+                    builder.Append(NormalizeCoordinate(viewport.Width)).Append('|')
+                        .Append(NormalizeCoordinate(viewport.Height)).Append('|')
+                        .Append(NormalizeCoordinate(viewport.ViewHeight)).Append('|')
+                        .Append(NormalizeCoordinate(viewport.ViewCenter.X)).Append('|')
+                        .Append(NormalizeCoordinate(viewport.ViewCenter.Y)).Append('|')
+                        .Append(NormalizeCoordinate(viewport.TwistAngle)).Append('|')
+                        .Append(viewport.Locked).Append('|');
+                }
+                break;
             case BlockReference blockReference:
                 var definition = (BlockTableRecord)transaction.GetObject(
                     blockReference.IsDynamicBlock ? blockReference.DynamicBlockTableRecord : blockReference.BlockTableRecord,
@@ -477,6 +963,16 @@ public sealed class NativeDwgCommands
             .Append(entity.Linetype).Append('|').Append((int)entity.LineWeight).Append('|')
             .Append(entity.Visible).Append('|');
         return builder.ToString();
+    }
+
+    private static string AuthoritativeText(Entity entity, string display, Transaction transaction)
+    {
+        if (!entity.HasFields) return display;
+        var id = entity.GetField();
+        if (!id.IsValid || id.IsErased) throw new InvalidDataException("Text has an unreadable field.");
+        var field = (Field)transaction.GetObject(id, OpenMode.ForRead);
+        // Compare the unevaluated expression, not the transient date display cache.
+        return "FIELD:" + field.GetFieldCode(FieldCodeFlags.AddMarkers);
     }
 
     private static void VerifyExpectedLayers(DatabaseSnapshot snapshot, Dictionary<string, string> expected)
@@ -531,7 +1027,17 @@ public sealed class NativeDwgCommands
         }
         if (actions.GroupBy(x => x.Source, StringComparer.OrdinalIgnoreCase).Any(group => group.Count() != 1))
             throw new InvalidDataException("Mapping contains duplicate source layers.");
-        return new MappingDocument(hash, actions);
+        var entityActions = new List<EntityAction>();
+        if (root.TryGetProperty("entity_actions", out var objectRows))
+            foreach (var row in objectRows.EnumerateArray())
+                entityActions.Add(new EntityAction(row.GetProperty("handle").GetString()!,
+                    row.GetProperty("source").GetString()!, row.GetProperty("type").GetString()!,
+                    row.GetProperty("context").GetString()!, row.GetProperty("decision").GetString()!,
+                    row.TryGetProperty("target", out var t) && t.ValueKind != JsonValueKind.Null ? t.GetString() : null));
+        if (entityActions.Any(x => string.IsNullOrWhiteSpace(x.Handle)) ||
+            entityActions.GroupBy(x => x.Handle, StringComparer.OrdinalIgnoreCase).Any(g => g.Count() != 1))
+            throw new InvalidDataException("Duplicate or empty object handle.");
+        return new MappingDocument(hash, actions, entityActions);
     }
 
     private static StandardDocument ReadStandard(string path)
@@ -585,6 +1091,11 @@ public sealed class NativeDwgCommands
             .Where(item => !string.IsNullOrWhiteSpace(item))
             .Cast<string>()
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var removedSources = root.TryGetProperty("removed_source_layers", out var removedRows)
+            ? removedRows.EnumerateArray().Select(item => item.GetString())
+                .Where(item => !string.IsNullOrWhiteSpace(item)).Cast<string>()
+                .ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         return new WriteExpectation(
             root.GetProperty("source_sha256").GetString() ?? throw new InvalidDataException("Expectation has no source hash."),
             root.GetProperty("entity_count").GetInt32(),
@@ -602,7 +1113,46 @@ public sealed class NativeDwgCommands
             root.TryGetProperty("generated_dimension_block_entities_expected", out var generatedCount)
                 ? generatedCount.GetInt32() : 0,
             targets,
+            removedSources,
             root.GetProperty("dwg_version").GetString() ?? "unknown");
+    }
+
+    private static DwsExpectation ReadDwsExpectation(string path)
+    {
+        using var json = JsonDocument.Parse(File.ReadAllBytes(path));
+        var root = json.RootElement;
+        var expectedLayers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var property in root.GetProperty("expected_layers").EnumerateObject())
+            expectedLayers[property.Name] = property.Value.GetString()
+                ?? throw new InvalidDataException($"DWS expected layer is null for handle {property.Name}.");
+        var expectedSignatures = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var property in root.GetProperty("expected_non_layer_signatures").EnumerateObject())
+            expectedSignatures[property.Name] = property.Value.GetString()
+                ?? throw new InvalidDataException($"DWS expected signature is null for handle {property.Name}.");
+        var targets = root.GetProperty("used_targets").EnumerateArray()
+            .Select(value => value.GetString())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Cast<string>()
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var removedSources = root.TryGetProperty("removed_source_layers", out var removedRows)
+            ? removedRows.EnumerateArray().Select(value => value.GetString())
+                .Where(value => !string.IsNullOrWhiteSpace(value)).Cast<string>()
+                .ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        return new DwsExpectation(
+            root.GetProperty("source_sha256").GetString()
+                ?? throw new InvalidDataException("DWS expectation has no source hash."),
+            root.GetProperty("dws_sha256").GetString()
+                ?? throw new InvalidDataException("DWS expectation has no DWS hash."),
+            root.GetProperty("entity_count").GetInt32(),
+            root.GetProperty("non_layer_sha256").GetString()
+                ?? throw new InvalidDataException("DWS expectation has no content signature."),
+            expectedLayers,
+            expectedSignatures,
+            root.GetProperty("mapped_entities").GetInt32(),
+            root.GetProperty("mapped_sources").GetInt32(),
+            targets,
+            removedSources);
     }
 
     private static string RequireExistingFile(string variable)
@@ -671,7 +1221,8 @@ public sealed class NativeDwgCommands
     }
 
     private sealed record MappingAction(string Source, string Decision, string? Target, string Reason);
-    private sealed record MappingDocument(string SourceSha256, List<MappingAction> Actions);
+    private sealed record EntityAction(string Handle, string Source, string Type, string Context, string Decision, string? Target);
+    private sealed record MappingDocument(string SourceSha256, List<MappingAction> Actions, List<EntityAction> EntityActions);
     private sealed record StandardLayer(string Name, int Aci, string Linetype, int Lineweight, bool Plot);
     private sealed record StandardDocument(string Name, string Version, List<StandardLayer> Layers);
     private sealed record LayerInfo(string Name, bool Protected);
@@ -682,12 +1233,17 @@ public sealed class NativeDwgCommands
     private sealed record ExecutionResult(int MappedEntities, Dictionary<string, int> MappedByContext,
         int XrefEntitiesPreserved, int GeneratedDimensionBlockEntitiesExpected,
         string ExpectedGeneratedDimensionBlockSha256, List<string> ExpectedGeneratedDimensionBlockSignatures,
-        HashSet<string> UsedTargets, Dictionary<string, string> ExpectedLayers);
+        HashSet<string> UsedTargets, HashSet<string> RemovedSourceLayers,
+        Dictionary<string, string> ExpectedLayers);
     private sealed record WriteExpectation(string SourceSha256, int EntityCount, string NonLayerSha256,
         int GeneratedDimensionBlockEntityCount, string GeneratedDimensionBlockSha256,
         List<string> GeneratedDimensionBlockSignatures,
         Dictionary<string, string> ExpectedLayers, Dictionary<string, string> ExpectedNonLayerSignatures,
         int MappedEntities, Dictionary<string, int> MappedByContext,
         int XrefEntitiesPreserved, int GeneratedDimensionBlockEntitiesExpected,
-        HashSet<string> UsedTargets, string DwgVersion);
+        HashSet<string> UsedTargets, HashSet<string> RemovedSourceLayers, string DwgVersion);
+    private sealed record DwsExpectation(string SourceSha256, string DwsSha256, int EntityCount,
+        string NonLayerSha256, Dictionary<string, string> ExpectedLayers,
+        Dictionary<string, string> ExpectedNonLayerSignatures, int MappedEntities,
+        int MappedSources, HashSet<string> UsedTargets, HashSet<string> RemovedSourceLayers);
 }

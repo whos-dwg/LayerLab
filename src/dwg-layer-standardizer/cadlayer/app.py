@@ -14,7 +14,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .engine import scan_dxf, validate_standard, suggest, convert_dxf, verify_actions
-from .native import available as native_available, scan_dwg, convert_dwg
+from .native import (available as native_available, completed_dws, create_dws,
+                     scan_dwg, convert_dwg)
 from .semantic import configuration as semantic_configuration, semantic_suggest
 
 BASE = Path(__file__).resolve().parent.parent
@@ -78,12 +79,16 @@ def completed_result(folder: Path) -> dict | None:
         verified_reopen = False
     if not verified_reopen:
         return None
-    return {
+    result = {
         "output": outputs[0].name,
         "mapping": receipt_path.name,
         "validation": validation_path.name,
         "report": validation,
     }
+    dws = completed_dws(output_dir)
+    if dws is not None:
+        result["dws"] = dws
+    return result
 
 
 def create_job(original_filename: str, data: bytes, kind: str) -> dict:
@@ -248,6 +253,8 @@ def convert(job_id: str, payload: ActionsPayload):
         else:
             raise ValueError("此來源類型只允許審核，不允許寫入。")
     result["download_prefix"] = f"/api/jobs/{job_id}/files/"
+    if result["output"].lower().endswith(".dwg"):
+        result["dws_endpoint"] = f"/api/jobs/{job_id}/dws"
     return result
 
 
@@ -256,6 +263,29 @@ def conversion_result(job_id: str):
     result = completed_result(get_job(job_id))
     if result is None:
         raise HTTPException(status_code=404, detail="尚無通過回讀驗證的輸出。")
+    result["download_prefix"] = f"/api/jobs/{job_id}/files/"
+    if result["output"].lower().endswith(".dwg"):
+        result["dws_endpoint"] = f"/api/jobs/{job_id}/dws"
+    return result
+
+
+@app.post("/api/jobs/{job_id}/dws")
+def dws_result(job_id: str):
+    folder = get_job(job_id)
+    primary = completed_result(folder)
+    if primary is None or not primary["output"].lower().endswith(".dwg"):
+        raise ValueError("必須先完成並通過 Save/Reopen 驗證的原生 DWG。")
+    inventory = load_json(folder / "inventory.json")
+    source = folder / inventory["filename"]
+    verified_dwg = folder / "output" / primary["output"]
+    mapping_path = folder / "native-convert-input" / "approved-mapping.json"
+    standard_path = folder / "native-convert-input" / "approved-standard.json"
+    try:
+        result = create_dws(source, verified_dwg, mapping_path, standard_path, folder / "output")
+    except Exception as exc:
+        return {"status": "FAILED", "primary_dwg_status": "PASS",
+                "message": "DWG 已完成、DWS 未產生。", "detail": str(exc)}
+    result["primary_dwg_status"] = "PASS"
     result["download_prefix"] = f"/api/jobs/{job_id}/files/"
     return result
 
@@ -267,11 +297,15 @@ def download(job_id: str, filename: str):
         raise HTTPException(status_code=404, detail="Invalid file")
     # Whitelist files to prevent serving uploaded arbitrary files or host paths.
     candidates = [folder / filename, folder / "output" / filename]
-    allowed = {"inventory.json", "mapping-draft.json", "mapping.json", "validation.json"}
+    allowed = {"inventory.json", "mapping-draft.json", "mapping.json", "validation.json",
+               "dws-validation.json"}
     for candidate in candidates:
         is_standardized = candidate.parent.name == "output" and "_standardized" in filename and Path(filename).suffix.lower() in (".dwg", ".dxf")
+        is_dws = candidate.parent.name == "output" and filename.endswith("_layer_mapping.dws")
+        if is_dws and completed_dws(folder / "output") is None:
+            raise HTTPException(status_code=404, detail="DWS is not verified")
         is_semantic_receipt = candidate.parent == folder and filename.startswith("semantic-suggestions-") and filename.endswith(".json")
-        if candidate.exists() and candidate.is_file() and (filename in allowed or is_standardized or is_semantic_receipt):
+        if candidate.exists() and candidate.is_file() and (filename in allowed or is_standardized or is_dws or is_semantic_receipt):
             return FileResponse(candidate, filename=filename, media_type="application/octet-stream")
     raise HTTPException(status_code=404, detail="File not found")
 

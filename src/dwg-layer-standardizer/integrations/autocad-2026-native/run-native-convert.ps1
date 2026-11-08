@@ -52,11 +52,32 @@ function Invoke-CoreConsole([string]$Drawing, [string]$Script, [string]$SuccessM
         if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
         throw "AutoCAD stage did not emit success marker '$SuccessMarker' (exit $code)."
     }
+    # The marker is written only after the native command has completed its save.
+    # Give the generated _.QUIT command time to close AutoCAD normally so the DWG
+    # is not left in the middle of process teardown. A hung console is still bounded.
     if (-not $process.HasExited) {
-        Stop-Process -Id $process.Id -Force
-        Wait-Process -Id $process.Id -ErrorAction SilentlyContinue
+        Wait-Process -Id $process.Id -Timeout 20 -ErrorAction SilentlyContinue
+        $process.Refresh()
+        if (-not $process.HasExited) {
+            Stop-Process -Id $process.Id -Force
+            Wait-Process -Id $process.Id -ErrorAction SilentlyContinue
+        }
     }
     return 0
+}
+
+function Wait-FileReleased([string]$Path, [string]$Stage) {
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        try {
+            $probe = [System.IO.File]::Open($Path, 'Open', 'ReadWrite', 'None')
+            $probe.Dispose()
+            return
+        }
+        catch {
+            Start-Sleep -Milliseconds 250
+        }
+    }
+    throw "$Path remained locked after the $Stage AutoCAD process exited."
 }
 
 if ([System.IO.Path]::GetExtension($sourcePath) -ine '.dwg') {
@@ -91,6 +112,7 @@ $validationPath = Join-Path $outPath 'validation.json'
 $receiptPath = Join-Path $outPath 'mapping.json'
 $tracePath = Join-Path $outPath 'native-writer.trace.log'
 $scriptPath = Join-Path $outPath 'convert.generated.scr'
+$cleanupScriptPath = Join-Path $outPath 'cleanup-mapped-sources.generated.scr'
 $validateScriptPath = Join-Path $outPath 'validate.generated.scr'
 $pluginForScript = $pluginPath.Replace('\', '/')
 $pluginDirectoryForScript = (Split-Path -Parent $pluginPath).Replace('\','/')
@@ -102,6 +124,12 @@ $scriptLines = @(
     '_.QUIT'
 )
 [System.IO.File]::WriteAllLines($scriptPath, $scriptLines, [System.Text.UTF8Encoding]::new($false))
+$cleanupScriptLines = @(
+    $trustedLoad,
+    'LAYERLABCLEANUPMAPPEDSOURCES',
+    '_.QUIT'
+)
+[System.IO.File]::WriteAllLines($cleanupScriptPath, $cleanupScriptLines, [System.Text.UTF8Encoding]::new($false))
 $validateScriptLines = @(
     $trustedLoad,
     'LAYERLABVALIDATENATIVE',
@@ -130,21 +158,14 @@ try {
         }
     }
 
-    $released = $false
-    for ($attempt = 0; $attempt -lt 40; $attempt++) {
-        try {
-            $probe = [System.IO.File]::Open($outputDwg, 'Open', 'ReadWrite', 'None')
-            $probe.Dispose()
-            $released = $true
-            break
-        }
-        catch {
-            Start-Sleep -Milliseconds 250
-        }
+    Wait-FileReleased -Path $outputDwg -Stage 'write-stage'
+
+    $cleanupExitCode = Invoke-CoreConsole -Drawing $outputDwg -Script $cleanupScriptPath `
+        -SuccessMarker 'cleanup:pass' -TraceFile $tracePath
+    if ($cleanupExitCode -ne 0) {
+        throw "AutoCAD mapped-source cleanup stage failed with exit code $cleanupExitCode."
     }
-    if (-not $released) {
-        throw 'Written DWG remained locked after the write-stage AutoCAD process exited.'
-    }
+    Wait-FileReleased -Path $outputDwg -Stage 'mapped-source cleanup'
 
     $validateExitCode = Invoke-CoreConsole -Drawing $outputDwg -Script $validateScriptPath -SuccessMarker 'validate:pass' -TraceFile $tracePath
     if ($validateExitCode -ne 0) {
@@ -183,5 +204,6 @@ if ($validation.status -ne 'PASS' -or -not $validation.output.save_reopen -or -n
     Validation = $validationPath
     WriteExpectation = $expectationPath
     WriteScript = $scriptPath
+    CleanupScript = $cleanupScriptPath
     ReopenValidationScript = $validateScriptPath
 }

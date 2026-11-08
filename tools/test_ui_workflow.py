@@ -24,8 +24,13 @@ class QuickWorkflowTests(unittest.TestCase):
 
     def test_verified_dwg_prompts_for_a_user_selected_save_location(self):
         app = (UI / "app.js").read_text(encoding="utf-8")
+        index = (UI / "index.html").read_text(encoding="utf-8")
         self.assertIn("window.showSaveFilePicker", app)
-        self.assertIn("選擇位置並儲存 DWG", app)
+        self.assertIn("儲存標準化 DWG（主要成果）", app)
+        self.assertIn('id="dws-btn"', index)
+        self.assertIn("匯出 DWS（需先完成 DWG）", index)
+        self.assertIn("$('#dws-btn').addEventListener('click',saveDws)", app)
+        self.assertIn("DWG 已完成、DWS 未產生。", app)
         self.assertIn("createWritable()", app)
 
     def test_completed_backend_result_recovers_a_lost_success_response(self):
