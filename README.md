@@ -65,7 +65,7 @@ flowchart LR
 
 ### 環境需求
 
-- Windows；原生 DWG 流程需要已安裝且可執行的 AutoCAD 2026。
+- Windows；原生 DWG 流程需 AutoCAD 2026 Update 1.2 或更新版本（.NET 10）。
 - Python 與 pip；本次已在 Python 3.13.13 驗證。其他版本尚未驗證。
 - 建置原生 adapter 需要 .NET 10 SDK；目前專案目標為 `net10.0-windows`、x64。
 - 原生整合目前使用 `C:\Program Files\Autodesk\AutoCAD 2026`；其他安裝位置需調整整合程式與參考路徑。
@@ -100,6 +100,8 @@ $env:CADLAYER_STANDARD = (Resolve-Path "src/dwg-layer-standardizer/standards/DEM
 點選「匯出映射」，由結果連結下載 Mapping JSON；再點「另存 DXF 並驗證」。成功後顯示物件數 18 → 18、原始檔未修改，並提供輸出 DXF、mapping.json 與 validation.json 下載連結。
 
 ![示範 DXF 已另存並通過 Save/Reopen 驗證](docs/images/workbench-verified.jpg)
+
+最新建置已達 0 警告、0 錯誤；合成樣本 DWS 桌面實際載入與獨立重開驗證通過。
 
 本次實際驗證範圍、套件版本與限制見[驗證紀錄](docs/VALIDATION.md)。
 

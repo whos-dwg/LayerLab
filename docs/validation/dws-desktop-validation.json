@@ -1,0 +1,43 @@
+{
+  "schema": "dws-layer-translation-validation/v1",
+  "status": "PASS",
+  "engine": {
+    "application": "AutoCAD 2026",
+    "method": "acet-laytrans"
+  },
+  "source": {
+    "path": "demo_input.dwg",
+    "sha256": "A25CF03145E79CBD3853811A3A85CD13913EA24E4FE5400428A469A5B2DF5934",
+    "unchanged": true
+  },
+  "dws": {
+    "path": "demo_input_layer_mapping.dws",
+    "sha256": "B96C8764950DAB759EF9A30198B69465C238C3C4E2AB0A6EEF41F963F8C66744",
+    "actual_autocad_load": true,
+    "laytrans_settings": 4
+  },
+  "mapping": {
+    "source_layers": 5,
+    "target_layers": [
+      "STD-ANNOTATION",
+      "STD-DOOR",
+      "STD-FURNITURE",
+      "STD-WALL"
+    ]
+  },
+  "entity_count_before": 18,
+  "entity_count_after": 18,
+  "mapped_entities_verified": 18,
+  "target_layer_properties_verified": true,
+  "removed_source_layers_verified": [
+    "A-DOOR",
+    "A-TEXT",
+    "A-WALL",
+    "MISC-05",
+    "WALL-NEW"
+  ],
+  "entity_overrides_policy": "preserve",
+  "block_policy": "translate_editable_blocks",
+  "validation_policy": "actual_autocad_acet_laytrans_load_save_reopen_on_disposable_source_copy",
+  "checked_at": "2026-11-09T01:08:46.5165883+08:00"
+}

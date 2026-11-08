@@ -9,6 +9,11 @@
     <RestoreIgnoreFailedSources>true</RestoreIgnoreFailedSources>
   </PropertyGroup>
 
+  <!-- AutoCAD references Windows Desktop assemblies; resolve them from the matching targeting pack. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App" />
+  </ItemGroup>
+
   <ItemGroup>
     <Reference Include="AcMgd">
       <HintPath>C:\Program Files\Autodesk\AutoCAD 2026\AcMgd.dll</HintPath>

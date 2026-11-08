@@ -57,3 +57,16 @@ JavaScript 語法檢查通過；核心與預覽 19/19、完整 DOM 9/9 通過。
 - 原生引擎重新建置：0 errors、3 warnings；合成 DWG 掃描與三程序轉換 PASS。18 → 18，非圖層簽章一致，來源未改變，5 個映射來源層已移除。
 - 本輪未進行 DWS 桌面載入、模型服務及大型圖面實測；舊版證據保持其原適用範圍。
 - 截圖沿用前版合成示範，不代表新功能已做視覺驗收。
+
+
+## 建置警告修正與 DWS 桌面載入（2026-11-09）
+
+三項 MSB3277 分別為 Microsoft.VisualBasic、System.Drawing、WindowsBase 的 Windows Desktop 組件參考衝突。原生專案新增 Microsoft.WindowsDesktop.App 框架參考，讓組件由匹配的 targeting pack 解析；未加入 NoWarn、未移除既有檢查。最終 Release 完整重建使用 `--no-incremental -warnaserror`，結果 0 warnings、0 errors。
+
+使用既有合成 DWG 與原始核准映射完成 DWS 建立、AutoCAD 2026 桌面 `acet-laytrans` 實際載入及儲存，最後以獨立 Core Console 重開驗證。結果為 PASS、actual_autocad_load=true、18 → 18、4 個目標圖層屬性正確、5 個來源層移除；合成來源與已驗證主 DWG 雜湊保持一致。
+
+原桌面文件的啟用文件、文件清單、DBMOD、空選取與空命令狀態在前後快照一致。原文件磁碟讀取受 AutoCAD 鎖定，本輪不宣稱已對其磁碟內容做前後雜湊比對。只操作合成副本，未儲存或關閉原文件。
+
+首次誤用執行收據 mapping.json（欄位大小寫與核准映射不同），導致建立命令失敗；此失敗保留於本機紀錄，未採認為通過。改用正式 API 同一路徑的 approved-mapping.json 後完整流程通過。臨時診斷 trace 已撤除，原生演算法未改動。DWS 7 項契約與下載保護回歸通過。
+
+[合成 DWS 實際載入報告](validation/dws-desktop-validation.json)。本輪證據不涵蓋大型圖面、XREF、尺寸匿名快取或含逐物件例外的 DWS；最後一種仍明確拒絕匯出。

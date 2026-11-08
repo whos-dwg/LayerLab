@@ -53,3 +53,12 @@ This optional stage requires a running AutoCAD 2026 desktop session with no acti
 The desktop loader tolerates a Start-page-only session with no open document. If a document is open, it must be idle and is restored afterward. AutoCAD may temporarily reject COM automation while its UI thread is busy; the loader retries only `RPC_E_CALL_REJECTED` and `RPC_E_SERVERCALL_RETRYLATER` for a bounded interval. Other COM failures still stop immediately.
 
 Layer Translator DWS files represent whole-layer mappings only. If the approved conversion contains object-level exceptions, the adapter fails the optional DWS stage and retains the verified primary DWG as the authoritative result.
+
+
+## Build dependencies
+
+The .NET 10 adapter requires AutoCAD 2026 Update 1.2 or later; earlier 2026 updates host .NET 8 and are not validated by this build.
+
+The `net10.0-windows` adapter explicitly references `Microsoft.WindowsDesktop.App`, matching the desktop assemblies referenced by AutoCAD. Build with `dotnet build -c Release --no-incremental -warnaserror` to detect unresolved assembly conflicts; warnings are not suppressed.
+
+The DWS `-Mapping` argument must point to the original approved-mapping.json used for conversion, not the generated mapping.json execution receipt. The workbench supplies this original input automatically.
