@@ -98,16 +98,13 @@ def run_scan(args: argparse.Namespace) -> None:
         if not native_available():
             raise ValueError("BLOCKED_NATIVE_DWG_ADAPTER: AutoCAD 2026 Core Console is unavailable.")
         inventory = scan_dwg(source, str(uuid.uuid4()), standard, args.out)
-        native_suggestions = list((args.out / "native-scan").glob("*.native.suggestions.json"))
-        if len(native_suggestions) != 1:
-            raise ValueError("Native DWG scan did not produce a unique suggestions file.")
-        proposals = load_json(native_suggestions[0])
     else:
-        from cadlayer.engine import scan_dxf, suggest
+        from cadlayer.engine import scan_dxf
         inventory = scan_dxf(source, str(uuid.uuid4()))
-        proposals = {"schema": "cad-layer-suggestions/v1",
-                     "inventory_sha256": inventory.get("sha256"), "standard": standard,
-                     "suggestions": suggest(inventory, standard)}
+    from cadlayer.engine import suggest
+    proposals = {"schema": "cad-layer-suggestions/v1", "engine": "rules",
+                 "inventory_sha256": inventory.get("sha256"), "standard": standard,
+                 "suggestions": suggest(inventory, standard)}
     write_new(args.out / "inventory.json", inventory)
     write_new(args.out / "suggestions.json", proposals)
     print((args.out / "inventory.json").resolve())

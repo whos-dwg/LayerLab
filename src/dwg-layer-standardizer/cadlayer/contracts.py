@@ -16,7 +16,7 @@ def validate_standard(data: dict) -> dict:
         name = raw.get("name")
         if not isinstance(name, str) or not name.strip() or len(name) > 255 or re.search(r'[<>/\\":;?*|=,]', name):
             raise ValueError(f"不合法標準圖層名稱：{name!r}")
-        if name.upper() in PROTECTED or name.upper() in seen:
+        if name.upper() == "DEFPOINTS" or name.upper() in seen:
             raise ValueError(f"重複或保護的目標圖層：{name}")
         seen.add(name.upper())
         aci, lineweight = raw.get("aci", 7), raw.get("lineweight", -3)
@@ -50,7 +50,7 @@ def verify_actions(inventory: dict, standard: dict, actions: list[dict]):
     mapping, normalized = {}, []
     for source, action in indexed.items():
         decision, target = action.get("decision"), action.get("target")
-        if originals[source].get("protected"):
+        if originals[source].get("protected") or source.upper() in PROTECTED or "|" in source:
             if decision != "keep" or target not in (None, source):
                 raise ValueError(f"受保護圖層不可轉換：{source}")
         elif decision == "map":

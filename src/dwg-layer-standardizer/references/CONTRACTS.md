@@ -62,6 +62,8 @@ Action per source layer:
 
 ## State machine
 
+Standards may include the system destination `0`; `DEFPOINTS` and XREF-dependent names remain invalid targets. Source layer `0` remains keep-only. Unlike ordinary targets, destination `0` preserves its existing drawing properties rather than applying nominal standard properties. `semantic_name` resolves complete, unambiguous Chinese names before checking for empty contents. `empty_fallback` suggests `0` only for empty, unrecognized layers when that target exists; it never approves a mapping. Nonempty unknown layers continue through content/model classification and cannot receive a model-selected `0` fallback.
+
 `SCANNED → AWAITING_REVIEW → APPROVED → WRITTEN_COPY → SAVE_REOPEN_VERIFIED`
 
 - Missing Autodesk engine for `.dwg` → `BLOCKED_NATIVE_DWG_ADAPTER`.
@@ -77,6 +79,10 @@ Each source layer includes `status`, `category`, `confidence`, `suggested_target
 - `protected`: system or XREF-dependent layer; keep only.
 
 Suggestions are review evidence, never approval. Native conversion still requires an approved mapping covering every source layer.
+
+The workbench and unified Python CLI use the same name/content rules for both DWG and DXF inventories. These suggestion rows use `target` and add `match_method` (`exact_name`, `exact_alias`, `user_convention`, `standard_suffix`, `content_evidence`, `conflicting_evidence`, `insufficient_evidence`, or `protected`) plus a per-row `engine`. Whole suffix segments preserve an explicit discipline prefix; unscoped matches prefer the architectural A target when present. Multiple matching uses remain ambiguous. User conventions are target-constrained and are not approvals. Raw scanner evidence files retain their native format.
+
+Semantic requests omit protected layers and already resolved direct name matches. Mixed receipts distinguish local rules from model rows. An uncertain model status, score below 0.65, or competing candidate within 0.05 leaves `target` null. Scores express matching strength, not calibrated probabilities. Geometry evidence uses one uniform scale and retains centers, arc angles, closure, bulge and truncation flags.
 
 Semantic-model receipts use the same schema and add `engine: semantic-model`, provider/model metadata, bounded-transmission disclosure, response IDs, and up to three standard-constrained candidates per source layer. The model must not receive the original drawing or return targets outside the approved standard.
 
@@ -94,7 +100,7 @@ Output: `StandardizedDxf` + `MappingJson` + `ValidationJson`.
 
 ## Native DWG validation: `dwg-layer-validation/v1`
 
-A PASS report records source/output SHA-256 values from the three-process write → cleanup → reopen-validation workflow, entity counts, non-layer signatures, mapped-entity counts by context, preserved XREF counts, verified target layers, verified removal of unreferenced mapped source layers, and the policies used for block definitions and entity overrides.
+A PASS report records source/output SHA-256 values from the three-process write → cleanup → reopen-validation workflow, authoritative entity counts, non-layer signatures, mapped-entity counts by context, preserved XREF counts, verified target layers, verified removal of unreferenced mapped source layers, and the policies used for block definitions and entity overrides. Authoritative entities include owning `Dimension` objects. AutoCAD-regenerated `*D` dimension display caches are excluded from reopen traversal because they are derived state and opening thousands of regenerated cache objects can terminate AutoCAD 2026; the write expectation retains their source-snapshot diagnostics without treating them as PASS authority.
 
 Native scope is `model_paper_and_editable_block_definitions`. XREF definitions and dependent layers are preserved. Entity color, linetype, and lineweight overrides remain unchanged. A failed validation must not leave a standardized DWG available as a successful output.
 
@@ -102,6 +108,6 @@ Native scope is `model_paper_and_editable_block_definitions`. XREF definitions a
 
 The reusable DWS is an additional output only after the primary native DWG has passed `dwg-layer-validation/v1`. Its report records the source and DWS SHA-256 values, `actual_autocad_load: true`, Layer Translator settings, mapped source and target counts, entity counts before/after, verified mapped entities, target-layer property verification, verified removal of mapped source layers, and the validation policy.
 
-Acceptance requires a real AutoCAD 2026 desktop `acet-laytrans` load and apply on a disposable source copy, followed by Save/Reopen verification in a fresh Core Console process. File existence or managed-code inspection of the DWS alone is insufficient. Any DWS failure leaves the primary DWG status as PASS and removes the unverified DWS.
+Acceptance requires a real AutoCAD 2026 desktop `acet-laytrans` load and apply on a disposable source copy, followed by bounded mapped-source-layer cleanup on the disposable copy and Save/Reopen verification in a separate fresh Core Console process. The cleanup set must match the approved mapping, skips source layers already removed by Layer Translator, and never modifies the source or verified primary DWG. File existence or managed-code inspection of the DWS alone is insufficient. Any DWS failure leaves the primary DWG status as PASS and removes the unverified DWS.
 
 A reusable DWS is available only for complete whole-layer decisions. Object-level exceptions cannot be represented by AutoCAD Layer Translator and therefore fail this optional stage without downgrading the verified DWG.

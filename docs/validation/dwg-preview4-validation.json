@@ -1,0 +1,111 @@
+{
+  "schema": "layerlab-dwg-validation-summary/v1",
+  "candidate": "v1.0.0-preview.4",
+  "status": "PASS",
+  "cases": {
+    "ordinary": {
+      "schema": "dwg-layer-validation/v1",
+      "status": "PASS",
+      "engine": {
+        "application": "AutoCAD 2026",
+        "adapter": "dwg-layer-standardizer/native-writer-v1"
+      },
+      "source": {
+        "path": "demo_input.dwg",
+        "sha256": "A25CF03145E79CBD3853811A3A85CD13913EA24E4FE5400428A469A5B2DF5934",
+        "unchanged": true
+      },
+      "output": {
+        "path": "demo_input_standardized.dwg",
+        "sha256": "878282C6A6DA11E92D3A70A445189463175AC7F41D4DF2ACAF256414C7F61E53",
+        "save_reopen": true,
+        "dwg_version": "AC1032"
+      },
+      "scope": "model_paper_and_editable_block_definitions",
+      "xref_policy": "preserve",
+      "generated_block_policy": "exclude_regenerated_dimension_caches_verify_owning_dimensions",
+      "entity_override_policy": "preserve",
+      "verification_policy": "independent_save_reopen_authoritative_entities",
+      "entity_count_scope": "model_paper_and_editable_block_definitions_excluding_regenerated_dimension_caches",
+      "entity_count_before": 18,
+      "entity_count_after": 18,
+      "source_snapshot_entity_count": 18,
+      "non_layer_signature_before": "1A6566DC0C594911D63CE6A481B659A47C234626EB5FD934D9FD633E341F2E80",
+      "non_layer_signature_after": "1A6566DC0C594911D63CE6A481B659A47C234626EB5FD934D9FD633E341F2E80",
+      "non_layer_signature_match": true,
+      "source_snapshot_generated_dimension_cache_entity_count": 0,
+      "regenerated_dimension_cache_reopen_traversal": false,
+      "owning_dimension_entities_verified": 0,
+      "mapped_entities": 18,
+      "mapped_by_context": {
+        "model": 17,
+        "block_definition": 1
+      },
+      "xref_entities_preserved": 0,
+      "target_layers_verified": [
+        "STD-ANNOTATION",
+        "STD-DOOR",
+        "STD-FURNITURE",
+        "STD-WALL"
+      ],
+      "system_zero_property_policy": "preserve_existing",
+      "removed_source_layers_verified": [
+        "A-DOOR",
+        "A-TEXT",
+        "A-WALL",
+        "MISC-05",
+        "WALL-NEW"
+      ],
+      "checked_at": "2026-11-09T17:41:00.7526296+08:00"
+    },
+    "system_zero": {
+      "schema": "dwg-layer-validation/v1",
+      "status": "PASS",
+      "engine": {
+        "application": "AutoCAD 2026",
+        "adapter": "dwg-layer-standardizer/native-writer-v1"
+      },
+      "source": {
+        "path": "demo_input.dwg",
+        "sha256": "A25CF03145E79CBD3853811A3A85CD13913EA24E4FE5400428A469A5B2DF5934",
+        "unchanged": true
+      },
+      "output": {
+        "path": "demo_input_standardized.dwg",
+        "sha256": "9579DD4AA96693835331CF7B26DC9B1FAEAB99865662E8668B7DE2FDBCA00B0D",
+        "save_reopen": true,
+        "dwg_version": "AC1032"
+      },
+      "scope": "model_paper_and_editable_block_definitions",
+      "xref_policy": "preserve",
+      "generated_block_policy": "exclude_regenerated_dimension_caches_verify_owning_dimensions",
+      "entity_override_policy": "preserve",
+      "verification_policy": "independent_save_reopen_authoritative_entities",
+      "entity_count_scope": "model_paper_and_editable_block_definitions_excluding_regenerated_dimension_caches",
+      "entity_count_before": 18,
+      "entity_count_after": 18,
+      "source_snapshot_entity_count": 18,
+      "non_layer_signature_before": "1A6566DC0C594911D63CE6A481B659A47C234626EB5FD934D9FD633E341F2E80",
+      "non_layer_signature_after": "1A6566DC0C594911D63CE6A481B659A47C234626EB5FD934D9FD633E341F2E80",
+      "non_layer_signature_match": true,
+      "source_snapshot_generated_dimension_cache_entity_count": 0,
+      "regenerated_dimension_cache_reopen_traversal": false,
+      "owning_dimension_entities_verified": 0,
+      "mapped_entities": 3,
+      "mapped_by_context": {
+        "model": 2,
+        "block_definition": 1
+      },
+      "xref_entities_preserved": 0,
+      "target_layers_verified": [
+        "0"
+      ],
+      "system_zero_property_policy": "preserve_existing",
+      "removed_source_layers_verified": [
+        "A-DOOR",
+        "EMPTY-01"
+      ],
+      "checked_at": "2026-11-09T17:42:11.7875741+08:00"
+    }
+  }
+}

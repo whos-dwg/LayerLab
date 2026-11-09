@@ -16,6 +16,29 @@ from cadlayer.native import completed_dws, convert_dwg
 
 
 class DwsContractTests(unittest.TestCase):
+    def test_dws_symbol_table_checks_precede_the_large_authoritative_snapshot(self):
+        validator = self.commands.split('public void ValidateDws()', 1)[1].split(
+            'private static Dictionary<string, List<string>> DwsLayerMappings', 1)[0]
+        snapshot = validator.index('CaptureAuthoritativeDatabase(document.Database)')
+        self.assertLess(validator.index('VerifyTargetLayers('), snapshot)
+        self.assertLess(validator.index('VerifyRemovedLayers('), snapshot)
+        self.assertIn('VerifyExpectedLayers(after, expectation.ExpectedLayers)', validator)
+        self.assertIn('after.EntityCount != expectation.EntityCount', validator)
+        self.assertIn('after.NonLayerSha256.Equals', validator)
+
+    def test_dws_cleanup_is_bounded_to_the_loaded_disposable_copy_and_reopened(self):
+        cleanup = self.commands.split('public void CleanupDwsValidation()', 1)[1].split(
+            '[CommandMethod("LAYERLABVALIDATEDWS"', 1)[0]
+        self.assertIn('LAYERLAB_DWS_VALIDATION_COPY', cleanup)
+        self.assertIn('Path.GetFullPath(document.Name).Equals(copyPath', cleanup)
+        self.assertIn('LAYERLAB_DWS_LOAD_PASS', cleanup)
+        self.assertIn('names.SetEquals(expectation.RemovedSourceLayers)', cleanup)
+        self.assertIn('names.IntersectWith(present)', cleanup)
+        self.assertIn('RemoveMappedSourceLayers(document.Database, mapping, names)', cleanup)
+        self.assertNotIn('database.Purge', cleanup)
+        self.assertLess(self.script.index("-SuccessMarker 'dws:cleanup:pass'"),
+                        self.script.index("-SuccessMarker 'dws:validate:pass'"))
+
     @classmethod
     def setUpClass(cls):
         cls.commands = (NATIVE / "NativeDwgCommands.cs").read_text(encoding="utf-8")

@@ -8,6 +8,7 @@
 .venv/
 node_modules/
 .env
+**/.layerlab-sync.json
 .env.*
 !.env.example
 *.log

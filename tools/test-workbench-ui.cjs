@@ -42,7 +42,7 @@ async function boot(options={}) {
     calls.push([url,init.method||'GET']);let value;
     if(url==='/api/health')value={version:'test',semantic_suggest:{available:false}};
     else if(url==='/api/standard')value=standard;
-    else if(url==='/api/suggest')value={standard:JSON.parse(init.body).standard,suggestions};
+    else if(url==='/api/suggest')value={standard:options.normalizedStandard||JSON.parse(init.body).standard,suggestions:options.rescoredSuggestions||suggestions};
     else if(url==='/api/demo')value={inventory:options.demoInventory||inventory,standard,suggestions};
     else if(url==='/api/jobs/'+JOB+'/files/inventory.json'){
       if(options.expiredJob)throw Error('Missing job');value=options.serverInventory||inventory;
@@ -129,6 +129,59 @@ test('cross-page batch approval and an unapproved draft survive a fresh document
     assert.equal(p.calls.some(([url])=>url.includes('/convert')||url.includes('/semantic-suggest')),false);
     assert.deepEqual(p.errors,[]);
   }finally{p.close();}
+});
+
+test('rescoring updates suggestions while retaining approvals, drafts, selection and undo',async()=>{
+  const rescoredSuggestions=suggestions.map(row=>({...row,target:'TEST-FURN',reason:'Updated content evidence'}));
+  const p=await boot({rescoredSuggestions});try {
+    assert.equal(p.$('#rescore-btn').disabled,true);
+    await saveFixtureReview(p);
+    p.$('[data-source="UNKNOWN"] input[type="checkbox"]').click();
+    const selected=p.$('#selected-count').textContent;
+    p.$('#rescore-btn').click();
+    await until(()=>p.calls.some(([url])=>url==='/api/suggest')&&!p.$('#rescore-btn').disabled,'rescore');
+    assert.equal(p.$('#stat-approved').textContent,'59');
+    assert.equal(p.$('#relation-name').textContent,'TEST-DOOR');
+    assert.match(p.$('#relation-label').textContent,/暫定/);
+    assert.equal(p.$('#selected-count').textContent,selected);
+    currentSource(p,'SOURCE-060');
+    assert.equal(p.$('#relation-name').textContent,'TEST-FURN');
+    p.$('#undo-btn').click();
+    assert.equal(p.$('#relation-name').textContent,'TEST-DOOR');
+    assert.equal(p.$('#stat-approved').textContent,'59');
+    assert.equal(p.calls.some(([url])=>String(url).endsWith('/convert')),false);
+    assert.deepEqual(p.errors,[]);
+  }finally{p.close();}
+});
+
+test('adding zero to a standard preserves compatible approvals, drafts, selection and raw metadata',async()=>{
+  const extended={...copy(actualStandard),version:'0.0.2',naming_policy:{zero:'empty_unknown_only'},
+    layers:[...copy(actualStandard.layers),{name:'0',aci:7,linetype:'Continuous',lineweight:-3,category:'system'}]};
+  const normalized={...copy(extended)};delete normalized.naming_policy;
+  const p=await boot({normalizedStandard:normalized});let storage;
+  try {
+    await saveFixtureReview(p);p.$('[data-source="UNKNOWN"] input[type="checkbox"]').click();
+    const selected=p.$('#selected-count').textContent;
+    Object.defineProperty(p.$('#standard-file'),'files',{configurable:true,value:[{name:'updated-standard.json',text:async()=>JSON.stringify(extended)}]});
+    p.$('#standard-file').dispatchEvent(new p.w.Event('change'));
+    await until(()=>p.$('#decision-dialog').open,'standard change');
+    p.$('#decision-dialog').returnValue='preserve';p.$('#decision-dialog').close();
+    await until(()=>!p.$('#rescore-btn').disabled,'standard applied');
+    assert.equal(p.$('#stat-approved').textContent,'59');
+    assert.equal(p.$('#selected-count').textContent,selected);
+    assert.equal(p.$('#relation-name').textContent,'TEST-DOOR');assert.match(p.$('#relation-label').textContent,/暫定/);
+    assert.match(p.$('#target-count').textContent,/48/);
+    await until(()=>JSON.parse(p.w.localStorage.getItem('layerlab.review.v1.'+JOB)||'{}').standardVersion===extended.version,'updated standard saved');
+    storage=p.storage();
+    const record=JSON.parse(storage['layerlab.review.v1.'+JOB]);
+    const core=require('../src/dwg-layer-standardizer/ui/workbench-core.js');
+    assert.equal(record.identity.standard,await core.fingerprint(extended));
+    assert.deepEqual(p.errors,[]);
+  }finally{p.close();}
+  const restored=await boot({storage,standard:extended});try {
+    restored.$('#restore-review').click();await until(()=>restored.$('#stat-approved').textContent==='59','restore updated standard');
+    assert.match(restored.$('#relation-label').textContent,/暫定/);assert.deepEqual(restored.errors,[]);
+  }finally{restored.close();}
 });
 
 test('restore refuses a changed standard, changed inventory and an expired server job without losing the saved record',async()=>{

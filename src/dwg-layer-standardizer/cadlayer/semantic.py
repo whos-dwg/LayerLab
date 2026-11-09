@@ -8,10 +8,13 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime, timezone
 import json
+import math
 import os
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+from .engine import suggest
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MODEL = "gpt-5-mini"
@@ -52,15 +55,26 @@ def _geometry_summary(preview: Any) -> dict[str, Any]:
     shapes = [shape for shape in preview[:30] if isinstance(shape, dict)]
     kind_counts = Counter(str(shape.get("kind", "unknown")) for shape in shapes)
     points: list[tuple[float, float]] = []
+
+    def read_point(value):
+        try:
+            pair = (float(value[0]), float(value[1]))
+            return pair if all(math.isfinite(v) for v in pair) else None
+        except (TypeError, ValueError, IndexError, KeyError):
+            return None
+
     for shape in shapes:
         raw_points = shape.get("points", [])
         if isinstance(raw_points, list):
-            for point in raw_points[:40]:
-                if isinstance(point, list) and len(point) >= 2:
-                    try:
-                        points.append((float(point[0]), float(point[1])))
-                    except (TypeError, ValueError):
-                        pass
+            points.extend(pair for raw in raw_points[:40] if (pair := read_point(raw)) is not None)
+        center = read_point(shape.get("center"))
+        if center:
+            try:
+                radius = abs(float(shape.get("radius", 0)))
+                if math.isfinite(radius):
+                    points.extend([(center[0] - radius, center[1] - radius), (center[0] + radius, center[1] + radius)])
+            except (TypeError, ValueError):
+                pass
     if points:
         xs, ys = [p[0] for p in points], [p[1] for p in points]
         min_x, max_x, min_y, max_y = min(xs), max(xs), min(ys), max(ys)
@@ -69,23 +83,36 @@ def _geometry_summary(preview: Any) -> dict[str, Any]:
         min_x = min_y = 0.0
         width = height = 1.0
     normalized = []
+    scale = max(width, height)
     for shape in shapes[:12]:
-        item: dict[str, Any] = {"kind": str(shape.get("kind", "unknown")), "closed": bool(shape.get("closed", False))}
+        item: dict[str, Any] = {"kind": str(shape.get("kind", "unknown")), "closed": bool(shape.get("closed", False)),
+                                "truncated": bool(shape.get("truncated", False)), "has_bulges": bool(shape.get("has_bulges", False))}
         raw_points = shape.get("points", [])
         if isinstance(raw_points, list):
             item["points"] = [
-                [round((float(point[0]) - min_x) / width, 3), round((float(point[1]) - min_y) / height, 3)]
-                for point in raw_points[:24]
-                if isinstance(point, list) and len(point) >= 2
+                [round((pair[0] - min_x) / scale, 3), round((pair[1] - min_y) / scale, 3)]
+                for raw in raw_points[:24] if (pair := read_point(raw)) is not None
             ]
+        center = read_point(shape.get("center"))
+        if center:
+            item["center"] = [round((center[0] - min_x) / scale, 3), round((center[1] - min_y) / scale, 3)]
         if "radius" in shape:
             try:
-                item["relative_radius"] = round(float(shape["radius"]) / max(width, height), 3)
+                radius = float(shape["radius"])
+                if math.isfinite(radius):
+                    item["relative_radius"] = round(radius / scale, 3)
             except (TypeError, ValueError):
+                pass
+        for key in ("start", "end"):
+            try:
+                angle = float(shape[key])
+                if math.isfinite(angle):
+                    item[key] = angle
+            except (KeyError, TypeError, ValueError):
                 pass
         normalized.append(item)
     return {"sample_count": len(shapes), "kinds": dict(kind_counts),
-            "aspect_ratio": round(width / height, 3), "normalized_samples": normalized}
+            "aspect_ratio": round(width / height, 3), "uniform_scale": True, "normalized_samples": normalized}
 
 
 def _layer_evidence(row: dict[str, Any]) -> dict[str, Any]:
@@ -149,14 +176,20 @@ def _request_batch(layers: list[dict[str, Any]], standard: dict[str, Any]) -> tu
     if not api_key:
         raise ValueError("尚未設定 OPENAI_API_KEY，模型判定目前不可用。")
     target_rows = [{"name": row.get("name"), "category": row.get("category", ""),
-                    "aliases": row.get("aliases", [])} for row in standard.get("layers", [])]
+                    "aliases": row.get("aliases", [])} for row in standard.get("layers", []) if row.get("name") != "0"]
     input_data = {"approved_standard": {"name": standard.get("name"), "version": standard.get("version"),
                                          "allowed_targets": target_rows},
                   "source_layers": [_layer_evidence(row) for row in layers]}
     instructions = (
         "You are an architectural CAD layer classifier. Infer semantics from all supplied evidence, not name similarity alone. "
         "Choose targets only from approved_standard.allowed_targets. Treat block names, text samples, object composition, context counts, "
-        "and normalized geometry as evidence. If evidence conflicts or is weak, return target null and status ambiguous or unknown. "
+        "and normalized geometry as evidence. Exact/whole-segment standard suffix matches and explicit user conventions "
+        "are resolved locally before this request: rc and RC牆 -> A-WALL; SITE, 挑空 and TEXT -> A-TEXT; "
+        "unscoped DOOR -> A-DOOR and HATCH -> A-HATCH when those targets exist. Preserve explicit discipline prefixes. "
+        "For remaining layers inspect actual shape composition, closed/open outlines, curves, block names and their counts; "
+        "do not equate a generic line or rectangle with a wall, column or door. Anonymous/generated block names are not semantic evidence. "
+        "A single meaningful block among many unknown blocks cannot label a whole layer. Samples may be incomplete. "
+        "If evidence conflicts or is weak, return target null and status ambiguous or unknown; do not force coverage. "
         "Never classify protected system/XREF layers; they are excluded from this request. Provide concise Traditional Chinese reasons."
     )
     body = {
@@ -183,9 +216,12 @@ def _request_batch(layers: list[dict[str, Any]], standard: dict[str, Any]) -> tu
 
 
 def semantic_suggest(inventory: dict[str, Any], standard: dict[str, Any]) -> dict[str, Any]:
-    allowed = {str(row.get("name")) for row in standard.get("layers", [])}
-    protected = [row for row in inventory.get("layers", []) if row.get("protected")]
-    active = [row for row in inventory.get("layers", []) if not row.get("protected")]
+    allowed = {str(row.get("name")) for row in standard.get("layers", []) if row.get("name") != "0"}
+    local = suggest(inventory, standard)
+    resolved = {row["source"]: row for row in local if row["status"] == "protected" or
+                row["match_method"] == "user_convention" or
+                (row["status"] == "suggested" and row["match_method"] in {"exact_name", "exact_alias", "standard_suffix", "semantic_name", "empty_fallback"})}
+    active = [row for row in inventory.get("layers", []) if row["name"] not in resolved]
     received: list[dict[str, Any]] = []
     response_ids: list[str] = []
     for offset in range(0, len(active), MAX_BATCH):
@@ -195,7 +231,14 @@ def semantic_suggest(inventory: dict[str, Any], standard: dict[str, Any]) -> dic
         if response_id:
             response_ids.append(response_id)
     by_source = {str(row.get("source")): row for row in received if isinstance(row, dict)}
-    normalized = []
+    normalized = list(resolved.values())
+
+    def confidence(value):
+        try:
+            number = float(value)
+            return min(1, max(0, number)) if math.isfinite(number) else 0
+        except (TypeError, ValueError):
+            return 0
     for row in active:
         source = str(row.get("name"))
         result = by_source.get(source)
@@ -204,24 +247,28 @@ def semantic_suggest(inventory: dict[str, Any], standard: dict[str, Any]) -> dic
                                "category": "unknown", "reason": "模型未回傳此來源圖層。", "candidates": []})
             continue
         target = result.get("target")
-        candidates = [candidate for candidate in result.get("candidates", [])
+        candidates = [{**candidate, "confidence": confidence(candidate.get("confidence"))}
+                      for candidate in result.get("candidates", [])
                       if isinstance(candidate, dict) and candidate.get("target") in allowed][:3]
         if target not in allowed:
             target = None
         status = result.get("status") if result.get("status") in {"suggested", "ambiguous", "unknown"} else "unknown"
         if target is None and status == "suggested":
             status = "ambiguous"
-        normalized.append({"source": source, "target": target, "confidence": float(result.get("confidence", 0)),
+        score = confidence(result.get("confidence"))
+        if status != "suggested" or score < .65 or any(
+                candidate["target"] != target and candidate["confidence"] >= score - .05 for candidate in candidates):
+            target = None
+            if status == "suggested":
+                status = "ambiguous"
+        normalized.append({"source": source, "target": target, "confidence": score,
                            "status": status, "category": str(result.get("category", "unknown"))[:80],
                            "reason": str(result.get("reason", ""))[:600], "candidates": candidates,
                            "engine": "semantic-model"})
-    normalized.extend({"source": str(row.get("name")), "target": None, "confidence": 1, "status": "protected",
-                       "category": "protected", "reason": row.get("protected_reason") or "受保護圖層",
-                       "candidates": [], "engine": "policy"} for row in protected)
     order = {str(row.get("name")): idx for idx, row in enumerate(inventory.get("layers", []))}
     normalized.sort(key=lambda row: order.get(row["source"], 10**9))
     config = configuration()
-    return {"schema": "cad-layer-suggestions/v1", "engine": "semantic-model",
+    return {"schema": "cad-layer-suggestions/v1", "engine": "semantic-model" if active else "rules",
             "model": config["model"], "provider": config["provider"], "source_sha256": inventory.get("sha256"),
             "standard": {"name": standard.get("name"), "version": standard.get("version")},
             "transmission": {"original_drawing": False, "bounded_inventory_evidence": True},

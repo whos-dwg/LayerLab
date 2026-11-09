@@ -1,0 +1,6 @@
+#!/bin/sh
+if [ "$3" != "1" ]; then exit 0; fi
+repo=$(git rev-parse --show-toplevel) || exit 1
+runtime="$repo/src/dwg-layer-standardizer/.venv/Scripts/python.exe"
+if [ ! -x "$runtime" ]; then runtime=python; fi
+"$runtime" "$repo/src/dwg-layer-standardizer/scripts/sync_ui.py" sync --repo "$repo"

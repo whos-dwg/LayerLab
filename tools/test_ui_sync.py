@@ -17,6 +17,19 @@ spec.loader.exec_module(S)
 
 
 class SyncTests(unittest.TestCase):
+    def test_project_standard_can_use_explicit_installed_ui_target(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / 'temp') as folder:
+            root=Path(folder);package=root/'package';package.mkdir()
+            standard=root/'approved.json'
+            standard.write_text(json.dumps({'schema':'cad-layer-standard/v1','name':'Approved fixture','layers':[{'name':'A-wall'}]}))
+            target=root/'installed skill'
+            (package/S.CONFIG).write_text(json.dumps({'source_repo':str(root),'standard_path':str(standard),'sync_target':str(target)}))
+            with patch.dict(os.environ),patch.object(S,'sync',return_value={'revision':'abc123'}) as sync:
+                os.environ.pop('CADLAYER_STANDARD',None)
+                S.prepare_workbench(package)
+                sync.assert_called_once_with(root,target)
+                self.assertEqual(os.environ['CADLAYER_STANDARD'],str(standard.resolve()))
+
     def test_git_discovery_recovers_from_a_broken_windows_launcher(self):
         with tempfile.TemporaryDirectory(dir=ROOT / 'temp') as folder:
             base = Path(folder)

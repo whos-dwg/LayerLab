@@ -254,7 +254,8 @@ def prepare_workbench(package):
             return
         config_path = candidate
     config = read_json(config_path)
-    repo, target = Path(config["source_repo"]), config_path.parent
+    repo = Path(config["source_repo"])
+    target = Path(config.get("sync_target", str(config_path.parent)))
     standard = check_standard(os.environ.get("CADLAYER_STANDARD") or config["standard_path"])
     result = sync(repo, target)
     os.environ["CADLAYER_STANDARD"] = str(standard)

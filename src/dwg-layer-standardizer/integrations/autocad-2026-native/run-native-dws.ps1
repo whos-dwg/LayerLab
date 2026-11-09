@@ -112,6 +112,7 @@ $createScript = Join-Path $outPath 'create-dws.generated.scr'
 $prepareScript = Join-Path $outPath 'prepare-dws-validation.generated.scr'
 $loadScript = Join-Path $outPath 'load-dws.generated.lsp'
 $validateScript = Join-Path $outPath 'validate-dws.generated.scr'
+$cleanupScript = Join-Path $outPath 'cleanup-dws-validation.generated.scr'
 $loadMarker = Join-Path $outPath 'dws-actual-load.marker'
 $trustBeforeForScript = (Join-Path $outPath 'dws-trustedpaths.before.txt').Replace('\','/')
 
@@ -137,6 +138,8 @@ $actualLoad = '(progn (arxload "' + $laytransForScript + '") (if (acet-laytrans 
 [System.IO.File]::WriteAllText($loadScript, $actualLoad, [System.Text.UTF8Encoding]::new($false))
 $validateLines = @($trustedLoad, 'LAYERLABVALIDATEDWS', '_.QUIT')
 [System.IO.File]::WriteAllLines($validateScript, $validateLines, [System.Text.UTF8Encoding]::new($false))
+$cleanupLines = @($trustedLoad, 'LAYERLABCLEANUPDWSVALIDATION', '_.QUIT')
+[System.IO.File]::WriteAllLines($cleanupScript, $cleanupLines, [System.Text.UTF8Encoding]::new($false))
 
 $sourceBefore = Get-Sha256 $sourcePath
 $verifiedDwgBefore = Get-Sha256 $verifiedDwgPath
@@ -147,6 +150,7 @@ $env:LAYERLAB_DWS_OUTPUT = $dwsPath
 $env:LAYERLAB_DWS_EXPECTATION_OUT = $expectationPath
 $env:LAYERLAB_DWS_VALIDATION_OUT = $validationPath
 $env:LAYERLAB_DWS_LOAD_MARKER = $loadMarker
+$env:LAYERLAB_DWS_VALIDATION_COPY = $validationCopy
 $env:LAYERLAB_TRACE_OUT = $tracePath
 
 try {
@@ -162,6 +166,8 @@ try {
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $loadMarker)) {
         throw 'Full AutoCAD did not complete actual DWS load validation.'
     }
+    Invoke-CoreConsole -Drawing $validationCopy -Script $cleanupScript `
+        -SuccessMarker 'dws:cleanup:pass' -TraceFile $tracePath
     Invoke-CoreConsole -Drawing $validationCopy -Script $validateScript `
         -SuccessMarker 'dws:validate:pass' -TraceFile $tracePath
 
@@ -182,7 +188,7 @@ catch {
 finally {
     Remove-Item -LiteralPath $validationCopy,$loadMarker -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $validationAuxiliary -Force -ErrorAction SilentlyContinue
-    Remove-Item Env:LAYERLAB_SOURCE_PATH,Env:LAYERLAB_MAPPING_PATH,Env:LAYERLAB_STANDARD_PATH,Env:LAYERLAB_DWS_OUTPUT,Env:LAYERLAB_DWS_EXPECTATION_OUT,Env:LAYERLAB_DWS_VALIDATION_OUT,Env:LAYERLAB_DWS_LOAD_MARKER,Env:LAYERLAB_TRACE_OUT -ErrorAction SilentlyContinue
+    Remove-Item Env:LAYERLAB_SOURCE_PATH,Env:LAYERLAB_MAPPING_PATH,Env:LAYERLAB_STANDARD_PATH,Env:LAYERLAB_DWS_OUTPUT,Env:LAYERLAB_DWS_EXPECTATION_OUT,Env:LAYERLAB_DWS_VALIDATION_OUT,Env:LAYERLAB_DWS_LOAD_MARKER,Env:LAYERLAB_DWS_VALIDATION_COPY,Env:LAYERLAB_TRACE_OUT -ErrorAction SilentlyContinue
 }
 
 [PSCustomObject]@{

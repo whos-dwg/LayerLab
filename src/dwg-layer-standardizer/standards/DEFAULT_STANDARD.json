@@ -1,7 +1,17 @@
 {
   "schema": "cad-layer-standard/v1",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "layers": [
+    {
+      "name": "0",
+      "aci": 7,
+      "linetype": "Continuous",
+      "lineweight": -3,
+      "category": "system",
+      "aliases": [],
+      "plot": true,
+      "property_policy": "preserve_existing"
+    },
     {
       "name": "A-balcony",
       "aci": 2,

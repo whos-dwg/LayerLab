@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from difflib import SequenceMatcher
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -17,26 +16,11 @@ import uuid
 
 import ezdxf
 
+from .recognition import suggest_layers
+
 PROTECTED = {"0", "DEFPOINTS"}
 SCAN_TYPES = ("LINE", "LWPOLYLINE", "POLYLINE", "ARC", "CIRCLE", "INSERT", "TEXT", "MTEXT", "DIMENSION", "HATCH", "LEADER", "MLEADER", "ELLIPSE", "SPLINE")
 GEOM_TYPES = {"LINE", "LWPOLYLINE", "POLYLINE", "ARC", "CIRCLE", "ELLIPSE", "SPLINE"}
-CATEGORY_WORDS = {
-    "wall": ("wall", "partition", "牆", "隔間"),
-    "door": ("door", "門"),
-    "window": ("window", "窗"),
-    "balcony": ("balcony", "balcon", "陽台", "阳台"),
-    "beam": ("beam", "梁"),
-    "parking": ("parking", "park", "車位", "车位", "車道", "车道", "停車", "停车"),
-    "stair": ("stair", "strs", "樓梯", "楼梯"),
-    "elevator": ("elevator", "lift", "電梯", "电梯"),
-    "mep": ("mep", "e&m", "機電", "机电", "機電設備", "机电设备"),
-    "site": ("site", "地籍", "基地", "街廓", "街廓"),
-    "furniture": ("furn", "furniture", "sofa", "table", "chair", "家具"),
-    "annotation": ("annotation", "annot", "text", "dim", "標註", "文字"),
-    "lighting": ("light", "lamp", "燈"),
-    "column": ("column", "柱"),
-    "hatch": ("hatch", "填充", "剖線"),
-}
 
 
 def digest_file(path: Path) -> str:
@@ -174,7 +158,7 @@ def validate_standard(data: dict) -> dict:
         name = raw.get("name")
         if not isinstance(name, str) or not name.strip() or len(name) > 255 or re.search(r'[<>/\\":;?*|=,]', name):
             raise ValueError(f"不合法標準圖層名稱：{name!r}")
-        if name.upper() in PROTECTED or name.upper() in seen:
+        if name.upper() == "DEFPOINTS" or name.upper() in seen:
             raise ValueError(f"重複或保護的目標圖層：{name}")
         seen.add(name.upper())
         aci = raw.get("aci", 7)
@@ -194,85 +178,8 @@ def validate_standard(data: dict) -> dict:
             "version": str(data.get("version", "1.0.0")), "layers": clean}
 
 
-def _norm(s: str) -> str:
-    return re.sub(r"[^a-z0-9\u4e00-\u9fff]", "", s.casefold())
-
-
-def _guess_category(row: dict) -> tuple[str, str, float]:
-    types = row.get("types") or {}
-    blocks = row.get("block_names") or {}
-    total = sum(types.values())
-    # An explicit architectural term in a layer name expresses intended usage.
-    # It outranks incidental content such as a parking layer containing only TEXT.
-    lower = str(row.get("name", "")).lower()
-    for cat, terms in CATEGORY_WORDS.items():
-        if any(term in lower for term in terms):
-            return cat, "來源圖層名稱含明確建築用途詞；仍需人工核准", 0.62
-    if total:
-        annotation = sum(types.get(t, 0) for t in ("TEXT", "MTEXT", "DIMENSION", "LEADER", "MLEADER"))
-        if annotation / total >= 0.8:
-            return "annotation", "80% 以上內容為文字或標註物件", 0.85
-        hatch = types.get("HATCH", 0)
-        if hatch / total >= 0.85:
-            return "hatch", "主要由填充線物件構成", 0.78
-    if blocks:
-        strong = []
-        for block in blocks:
-            for cat, terms in CATEGORY_WORDS.items():
-                if cat not in ("annotation", "hatch") and any(term in block.lower() for term in terms):
-                    strong.append(cat)
-        if strong and len(set(strong)) == 1:
-            return strong[0], "圖塊名稱提供用途線索，尚未驗證幾何", 0.7
-    return "unknown", "僅有幾何／物件性質，無足夠用途證據", 0
-
-
 def suggest(inventory: dict, standard: dict) -> list[dict]:
-    standard = validate_standard(standard)
-    suggestions = []
-    for row in inventory["layers"]:
-        if row["protected"]:
-            suggestions.append({"source": row["name"], "target": None, "confidence": 1, "reason": row["protected_reason"],
-                                "category": "protected", "status": "protected"})
-            continue
-        cat, reason, cat_conf = _guess_category(row)
-        empty_layer = row["total"] == 0
-        if empty_layer:
-            cat_conf = 0
-            reason = "空白圖層，沒有物件證據"
-        candidates = []
-        for target in standard["layers"]:
-            exact = _norm(row["name"]) == _norm(target["name"])
-            alias = _norm(row["name"]) in {_norm(x) for x in target["aliases"]}
-            string_sim = SequenceMatcher(None, _norm(row["name"]), _norm(target["name"])).ratio()
-            matching_cat = bool(cat != "unknown" and target["category"].lower() == cat)
-            # Never report a strong match solely from layer-name resemblance.
-            # Fuzzy names alone are too weak for CAD semantics. Require very high
-            # resemblance, and never let an empty layer fuzzy-match a target.
-            confidence = 0.9 if exact or alias else (min(0.42, string_sim * 0.42) if string_sim >= 0.85 else 0)
-            if matching_cat:
-                confidence = max(confidence, cat_conf * 0.78)
-            elif cat != "unknown" and target["category"]:
-                confidence *= 0.55
-            if empty_layer and not (exact or alias):
-                confidence = 0
-            candidates.append((confidence, target["name"], matching_cat, exact or alias))
-        candidates.sort(reverse=True)
-        best = candidates[0] if candidates else (0, None, False, False)
-        score, target_name, catmatch, aliasmatch = best
-        tied = bool(score >= 0.25 and not aliasmatch and any(score - item[0] <= 0.02 for item in candidates[1:]))
-        if score < 0.25 or tied:
-            target_name = None
-        if aliasmatch:
-            reason = f"標準圖層名稱／別名符合；{reason}"
-        elif catmatch:
-            reason = f"目標類別符合；{reason}"
-        if tied:
-            reason = f"多個標準目標證據相近，禁止自動指定；{reason}"
-        suggestions.append({"source": row["name"], "target": target_name,
-                            "confidence": round(score, 2), "category": cat,
-                            "reason": reason, "status": "ambiguous" if tied else "suggested" if target_name else "unknown",
-                            "candidates": [{"target": item[1], "confidence": round(item[0], 2)} for item in candidates[:5] if item[0] > 0]})
-    return suggestions
+    return suggest_layers(inventory, validate_standard(standard))
 
 
 def _entity_signature(doc: Any) -> dict:
@@ -320,7 +227,7 @@ def verify_actions(inventory: dict, standard: dict, actions: list[dict]) -> tupl
     for src, item in indexed.items():
         decision = item.get("decision")
         target = item.get("target")
-        protected = originals[src]["protected"]
+        protected = originals[src].get("protected") or protected_reason(src) is not None
         if protected:
             if decision != "keep" or target not in (None, src):
                 raise ValueError(f"受保護圖層不可轉換：{src}")
@@ -347,6 +254,9 @@ def convert_dxf(source: Path, inventory: dict, standard: dict, actions: list[dic
     before = _entity_signature(doc)
     counters = Counter()
     for src, dst in mappings.items():
+        if dst == "0":
+            # The built-in layer is a destination, not a property-normalization target.
+            continue
         target = target_defs[dst]
         if dst not in doc.layers:
             doc.layers.new(dst, dxfattribs={"color": target["aci"], "linetype": "CONTINUOUS", "lineweight": target["lineweight"], "plot": int(target["plot"])})

@@ -1,43 +1,99 @@
 {
-  "schema": "dws-layer-translation-validation/v1",
+  "schema": "layerlab-dws-desktop-validation-summary/v1",
+  "candidate": "v1.0.0-preview.4",
   "status": "PASS",
-  "engine": {
-    "application": "AutoCAD 2026",
-    "method": "acet-laytrans"
+  "cases": {
+    "ordinary": {
+      "schema": "dws-layer-translation-validation/v1",
+      "status": "PASS",
+      "engine": {
+        "application": "AutoCAD 2026",
+        "method": "acet-laytrans"
+      },
+      "source": {
+        "path": "demo_input.dwg",
+        "sha256": "A25CF03145E79CBD3853811A3A85CD13913EA24E4FE5400428A469A5B2DF5934",
+        "unchanged": true
+      },
+      "dws": {
+        "path": "demo_input_layer_mapping.dws",
+        "sha256": "6114BED6613EA41B33300CCE9E2FD51C7213FE281C6278F7A94C144BE8737812",
+        "actual_autocad_load": true,
+        "laytrans_settings": 4
+      },
+      "mapping": {
+        "source_layers": 5,
+        "target_layers": [
+          "STD-ANNOTATION",
+          "STD-DOOR",
+          "STD-FURNITURE",
+          "STD-WALL"
+        ]
+      },
+      "entity_count_before": 18,
+      "entity_count_after": 18,
+      "mapped_entities_verified": 18,
+      "target_layer_properties_verified": true,
+      "removed_source_layers_verified": [
+        "A-DOOR",
+        "A-TEXT",
+        "A-WALL",
+        "MISC-05",
+        "WALL-NEW"
+      ],
+      "entity_overrides_policy": "preserve",
+      "block_policy": "translate_editable_blocks",
+      "cleanup_policy": "bounded_mapped_source_layer_cleanup_on_disposable_copy",
+      "validation_policy": "actual_autocad_acet_laytrans_load_save_reopen_on_disposable_source_copy",
+      "checked_at": "2026-11-09T18:37:25.7861131+08:00"
+    },
+    "system_zero": {
+      "schema": "dws-layer-translation-validation/v1",
+      "status": "PASS",
+      "engine": {
+        "application": "AutoCAD 2026",
+        "method": "acet-laytrans"
+      },
+      "source": {
+        "path": "demo_input.dwg",
+        "sha256": "A25CF03145E79CBD3853811A3A85CD13913EA24E4FE5400428A469A5B2DF5934",
+        "unchanged": true
+      },
+      "dws": {
+        "path": "demo_input_layer_mapping.dws",
+        "sha256": "F3BA5E909FA14AD6681E94D1AC2692F9A02438615113C507233FAB4A84A0DD60",
+        "actual_autocad_load": true,
+        "laytrans_settings": 4
+      },
+      "mapping": {
+        "source_layers": 2,
+        "target_layers": [
+          "0"
+        ]
+      },
+      "entity_count_before": 18,
+      "entity_count_after": 18,
+      "mapped_entities_verified": 3,
+      "target_layer_properties_verified": true,
+      "removed_source_layers_verified": [
+        "A-DOOR",
+        "EMPTY-01"
+      ],
+      "entity_overrides_policy": "preserve",
+      "block_policy": "translate_editable_blocks",
+      "cleanup_policy": "bounded_mapped_source_layer_cleanup_on_disposable_copy",
+      "validation_policy": "actual_autocad_acet_laytrans_load_save_reopen_on_disposable_source_copy",
+      "checked_at": "2026-11-09T18:37:36.2243195+08:00"
+    }
   },
-  "source": {
-    "path": "demo_input.dwg",
-    "sha256": "A25CF03145E79CBD3853811A3A85CD13913EA24E4FE5400428A469A5B2DF5934",
-    "unchanged": true
-  },
-  "dws": {
-    "path": "demo_input_layer_mapping.dws",
-    "sha256": "B96C8764950DAB759EF9A30198B69465C238C3C4E2AB0A6EEF41F963F8C66744",
-    "actual_autocad_load": true,
-    "laytrans_settings": 4
-  },
-  "mapping": {
-    "source_layers": 5,
-    "target_layers": [
-      "STD-ANNOTATION",
-      "STD-DOOR",
-      "STD-FURNITURE",
-      "STD-WALL"
-    ]
-  },
-  "entity_count_before": 18,
-  "entity_count_after": 18,
-  "mapped_entities_verified": 18,
-  "target_layer_properties_verified": true,
-  "removed_source_layers_verified": [
-    "A-DOOR",
-    "A-TEXT",
-    "A-WALL",
-    "MISC-05",
-    "WALL-NEW"
-  ],
-  "entity_overrides_policy": "preserve",
-  "block_policy": "translate_editable_blocks",
-  "validation_policy": "actual_autocad_acet_laytrans_load_save_reopen_on_disposable_source_copy",
-  "checked_at": "2026-11-09T01:08:46.5165883+08:00"
+  "desktop_state_verification": {
+    "active_document_restored": true,
+    "full_document_list_unchanged_in_final_check": true,
+    "dbmod_unchanged_in_final_check": true,
+    "selection_unchanged_in_final_check": true,
+    "commands_idle": true,
+    "no_validation_copy_left_open": true,
+    "original_document_disk_hash_verified": false,
+    "disk_hash_limitation": "Open original documents were locked; no save or close was requested."
+  }
 }

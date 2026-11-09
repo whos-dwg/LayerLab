@@ -25,7 +25,7 @@
   const pagingIcon = forward => '<svg class="ui-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="'+(forward?'M3 8h10M9 4l4 4-4 4':'M13 8H3m4-4L3 8l4 4')+'"/></svg>';
   const setText = (selector,value) => { const node=$(selector); const text=String(value); if(node.textContent!==text)node.textContent=text; };
   const displayLineweight = value => value===-3?'Default':value===-1?'ByLayer':value===-2?'ByBlock':Number.isFinite(value)?value/100+' mm':'—';
-  const targetProperties = target => 'ACI '+(target.aci??7)+' · '+(target.linetype||'CONTINUOUS')+' · '+displayLineweight(target.lineweight);
+  const targetProperties = target => target.name==='0'?'系統 0 層 · 保留既有屬性':'ACI '+(target.aci??7)+' · '+(target.linetype||'CONTINUOUS')+' · '+displayLineweight(target.lineweight);
   const standardDisplayName=()=>state.standard?(state.standardLabel||'default'):'未載入標準';
   function reviewStatus(text,error=false) {
     setText('#review-save-status',text);$('#review-save-status').classList.toggle('save-error',error);
@@ -219,7 +219,7 @@
     for(const id of ['demo-btn','import-btn','input-file']) $('#'+id).disabled=busy||!ready;
     $('#quick-flow-btn').disabled=busy||!ready;
     for(const id of ['restore-review','discard-review','review-drafts','resume-save'])$('#'+id).disabled=busy||!ready;
-    for(const id of ['standard-btn','standard-file','model-suggest-btn','export-btn']) $('#'+id).disabled=busy||!loaded;
+    for(const id of ['standard-btn','standard-file','rescore-btn','model-suggest-btn','export-btn']) $('#'+id).disabled=busy||!loaded;
     $('#model-suggest-btn').disabled=busy||!loaded||!state.semantic.available;
     $('#convert-btn').disabled=busy||!canConvert();
     const dwsButton=$('#dws-btn'),dwsReady=!!state.verifiedDwgResult;
@@ -546,7 +546,7 @@
       '<div>模型 '+(row.counts?.model||0)+' · 配置 '+(row.counts?.paper||0)+' · 圖塊定義 '+(row.counts?.block||0)+'</div>';
     const blocks=Object.entries(row.block_names||{}).slice(0,20);
     if(blocks.length)$('#evidence').innerHTML+='<details><summary>圖塊證據（前 '+blocks.length+' 項）</summary>'+blocks.map(([name,n])=>'<div>'+esc(name)+' × '+esc(n)+'</div>').join('')+'</details>';
-    const suggestion=state.suggestions.get(row.name)||{},model=state.suggestionEngine==='semantic-model';
+    const suggestion=state.suggestions.get(row.name)||{},model=suggestion.engine?suggestion.engine==='semantic-model':state.suggestionEngine==='semantic-model';
     setText('#decision-types',Number(row.total||0).toLocaleString()+' 個物件 · '+(types.slice(0,3).map(([name,n])=>name+' '+n).join(' / ')||'尚無物件類型證據'));
     setText('#decision-reason',row.protected?(row.protected_reason||'系統保護圖層，保留原圖層。'):
       action.decision==='keep'?'你已確認保留此來源的原圖層。':
@@ -598,16 +598,21 @@
       const result=await jsonPost('/api/suggest',{inventory:state.inventory,standard});
       if(!valid())return;
       const compatible=C.compatibleActions(rows(),state.actions,state.standard,result.standard);
+      const draftActions=new Map([...state.drafts].map(([source,target])=>[source,{source,target,decision:'map'}]));
+      const migratedDrafts=C.compatibleActions(rows(),draftActions,state.standard,result.standard).actions;
+      const compatibleDrafts=new Map([...state.drafts].filter(([source,target])=>migratedDrafts.get(source)?.decision==='map'&&migratedDrafts.get(source).target===target));
       const reviewed=counts().manual;
       // Keep the operation lock while the native modal asks how to handle reviewed decisions.
       const answer=await choose('切換圖層標準',
         '新標準：'+file.name+'\n目前已有 '+reviewed+' 個人工審核決策。\n可保留 '+compatible.preserved+' 個決策（保留原圖層，或目標屬性完全相同）；其餘須重新審核。操作後可復原。',
         [['preserve','保留相容決策'],['reset','全部重新審核']]);
       if(answer==='cancel'||!valid())return;
-      remember('切換圖層標準');state.standard=result.standard;state.standardLabel=file.name;
+      remember('切換圖層標準');state.standard=standard;state.standardLabel=file.name;
       state.suggestions=new Map(result.suggestions.map(s=>[s.source,s]));state.suggestionEngine='rules';
-      state.actions=answer==='preserve'?compatible.actions:C.createActions(rows());state.drafts.clear();
-      state.selected.clear();state.activeTarget='';invalidateResult();updateProfile();render();
+      state.actions=answer==='preserve'?compatible.actions:C.createActions(rows());
+      state.drafts=answer==='preserve'?compatibleDrafts:new Map();
+      if(answer!=='preserve')state.selected.clear();
+      state.activeTarget='';invalidateResult();updateProfile();render();
       toast('標準已切換；保留 '+(answer==='preserve'?compatible.preserved:0)+' 個人工決策。可使用復原。');
     },()=>changeStandard(file));
   }
@@ -640,6 +645,16 @@
     for(const row of candidates)state.actions.set(row.name,{source:row.name,decision:'map',target:state.suggestions.get(row.name).target,reason:'human_approved_suggestion'});
     invalidateResult();render();toast('已採用 '+candidates.length+' 個建議；仍有 '+counts().pending+' 個圖層待審核。可使用復原。');
   }
+  async function rescoreSuggestions() {
+    if(state.busy||!state.inventory)return;
+    await runOperation('正在依名稱與內容證據重新判讀',async valid=>{
+      const result=await jsonPost('/api/suggest',{inventory:state.inventory,standard:state.standard});
+      if(!valid())return;
+      remember('重新判讀建議');
+      state.suggestions=new Map(result.suggestions.map(s=>[s.source,s]));state.suggestionEngine='rules';
+      state.revision++;render();toast('已重新判讀；人工決策與暫定映射均保留，新增建議仍須確認。');
+    },rescoreSuggestions);
+  }
   async function modelSuggest() {
     if(!state.inventory||!state.semantic.available)return false;
     let completed=false;
@@ -647,11 +662,11 @@
       const result=await jsonPost('/api/jobs/'+state.inventory.job_id+'/semantic-suggest',{standard:state.standard});
       if(!valid())return;
       remember('模型建議更新');
-      state.suggestions=new Map(result.suggestions.map(s=>[s.source,s]));state.suggestionEngine='semantic-model';
+      state.suggestions=new Map(result.suggestions.map(s=>[s.source,s]));state.suggestionEngine=result.engine||'semantic-model';
       state.revision++;render();const box=$('#results');box.hidden=false;box.replaceChildren();
-      const title=document.createElement('strong');title.textContent='模型已完成語意判定；建議仍需人工確認。';box.append(title);
+      const title=document.createElement('strong');title.textContent=result.engine==='rules'?'名稱規則已完成對應；建議仍需人工確認。':'模型已完成語意判定；明確名稱對應沿用規則，建議仍需人工確認。';box.append(title);
       if(result.download)box.append(fileLink(result.download,result.receipt||'模型判定稽核 JSON'));
-      toast('模型判定完成；請先檢視內容證據，再採用建議。');
+      toast(result.engine==='rules'?'名稱規則已完成對應；請檢視後採用建議。':'模型判定完成；請先檢視內容證據，再採用建議。');
       completed=true;
     },modelSuggest);
     return completed;
@@ -886,6 +901,7 @@
   $('#bulk-approve').addEventListener('click',()=>applyBulk());
   $('#bulk-keep').addEventListener('click',()=>applyBulk(true));
   $('#accept-suggestions').addEventListener('click',acceptSuggestions);
+  $('#rescore-btn').addEventListener('click',rescoreSuggestions);
   $('#model-suggest-btn').addEventListener('click',modelSuggest);
   $('#undo-btn').addEventListener('click',undo);
   $('#export-btn').addEventListener('click',exportPlan);

@@ -6,7 +6,7 @@
 
 Windows 本機圖層審核工作台 · AutoCAD 2026 原生 DWG · DXF 相容流程
 
-[下載 v1.0.0-preview.3](https://github.com/whos-dwg/LayerLab/releases/tag/v1.0.0-preview.3) · [快速開始](#快速開始) · [操作手冊](src/dwg-layer-standardizer/README.zh-TW.md) · [資料契約](src/dwg-layer-standardizer/references/CONTRACTS.md) · [參與開發](CONTRIBUTING.md)
+[下載 v1.0.0-preview.4](https://github.com/whos-dwg/LayerLab/releases/tag/v1.0.0-preview.4) · [快速開始](#快速開始) · [操作手冊](src/dwg-layer-standardizer/README.zh-TW.md) · [資料契約](src/dwg-layer-standardizer/references/CONTRACTS.md) · [參與開發](CONTRIBUTING.md)
 
 </div>
 
@@ -64,13 +64,13 @@ flowchart LR
 
 ## 下載目前預覽版
 
-目前公開預覽版為 [v1.0.0-preview.3](https://github.com/whos-dwg/LayerLab/releases/tag/v1.0.0-preview.3)，已包含三項建置警告修正與 DWS 桌面驗證成果。
+目前公開預覽版為 [v1.0.0-preview.4](https://github.com/whos-dwg/LayerLab/releases/tag/v1.0.0-preview.4)，已包含建置警告、辨識相容性、Git hooks 與 DWS 回讀清理修正，並完成實測。
 
-- [下載原始碼 ZIP](https://github.com/whos-dwg/LayerLab/releases/download/v1.0.0-preview.3/LayerLab-v1.0.0-preview.3-source.zip)
-- [下載 SHA256SUMS.txt](https://github.com/whos-dwg/LayerLab/releases/download/v1.0.0-preview.3/SHA256SUMS.txt)
-- [目前操作手冊](src/dwg-layer-standardizer/README.zh-TW.md) · [此版本驗證紀錄](https://github.com/whos-dwg/LayerLab/blob/v1.0.0-preview.3/docs/VALIDATION.md)
+- [下載原始碼 ZIP](https://github.com/whos-dwg/LayerLab/releases/download/v1.0.0-preview.4/LayerLab-v1.0.0-preview.4-source.zip)
+- [下載 SHA256SUMS.txt](https://github.com/whos-dwg/LayerLab/releases/download/v1.0.0-preview.4/SHA256SUMS.txt)
+- [目前操作手冊](src/dwg-layer-standardizer/README.zh-TW.md) · [此版本驗證紀錄](https://github.com/whos-dwg/LayerLab/blob/v1.0.0-preview.4/docs/VALIDATION.md)
 
-將 ZIP 與校驗檔下載至同一資料夾，以 PowerShell 執行 `Get-FileHash .\LayerLab-v1.0.0-preview.3-source.zip -Algorithm SHA256`，核對結果與 `SHA256SUMS.txt` 一致。這是原始碼包，需依下列步驟安裝相依套件；舊版附件只供歷史參考。
+將 ZIP 與校驗檔下載至同一資料夾，以 PowerShell 執行 `Get-FileHash .\LayerLab-v1.0.0-preview.4-source.zip -Algorithm SHA256`，核對結果與 `SHA256SUMS.txt` 一致。這是原始碼包，需依下列步驟安裝相依套件；舊版附件只供歷史參考。
 
 ## 快速開始
 
@@ -82,7 +82,7 @@ flowchart LR
 - 原生整合目前使用 `C:\Program Files\Autodesk\AutoCAD 2026`；其他安裝位置需調整整合程式與參考路徑。
 - Node.js 僅用於前端檢查及測試。
 
-下載上方 v1.0.0-preview.3 ZIP 並解壓，進入包含 `README.md` 與 `src` 的 `LayerLab` 資料夾，於此開啟 PowerShell：
+下載上方 v1.0.0-preview.4 ZIP 並解壓，進入包含 `README.md` 與 `src` 的 `LayerLab` 資料夾，於此開啟 PowerShell：
 
 ```powershell
 python -m venv .venv
@@ -99,7 +99,7 @@ $env:CADLAYER_STANDARD = (Resolve-Path "src/dwg-layer-standardizer/standards/DEM
 
 若要重現本次套件版本，可將安裝命令的 requirements 路徑改為 `docs/requirements-validated.txt`。
 
-上例使用內附示範標準；正式作業前，請將 `CADLAYER_STANDARD` 改為已核准標準 JSON 的絕對路徑。另內附 47 層的匿名化預設標準 `src/dwg-layer-standardizer/standards/DEFAULT_STANDARD.json`，保留圖層名稱、CAD 屬性、別名、分類與命名規則，不含公司名稱及來源工作紀錄。
+上例使用內附示範標準；正式作業前，請將 `CADLAYER_STANDARD` 改為已核准標準 JSON 的絕對路徑。另內附 48 層的匿名化預設標準 `src/dwg-layer-standardizer/standards/DEFAULT_STANDARD.json`，保留圖層名稱、CAD 屬性、別名、分類與命名規則，不含公司名稱及來源工作紀錄。
 
 1. 點選「開啟示範 DXF」，或匯入 DWG、DXF／`cad-layer-inventory/v1` 盤點 JSON。
 2. 檢查目前標準，查看來源層的內容證據與幾何。
@@ -125,7 +125,7 @@ $env:CADLAYER_STANDARD = (Resolve-Path "src/dwg-layer-standardizer/standards/DEM
 
 匯入 DWG、完成映射核准後，點選「另存 DWG 並驗證」。系統依序以三個獨立 AutoCAD 程序寫入副本、重開清理來源層、再次重開驗證；成功後可儲存標準化 DWG。
 
-需要重用整層映射時，先啟動 AutoCAD 2026 桌面，確認沒有執行中的命令，再點選「匯出 DWS」。系統會在可丟棄的來源副本實際載入及套用 DWS、儲存，再以獨立 Core Console 重開驗證。通過後才提供 DWS 與驗證報告；可用 AutoCAD `LAYTRANS → Load` 載入。此選配不支援逐物件例外，DXF 也不提供 DWS。失敗時保留已驗證主 DWG，並顯示「DWG 已完成、DWS 未產生」。
+需要重用整層映射時，先啟動 AutoCAD 2026 桌面，確認沒有執行中的命令，再點選「匯出 DWS」。系統會在可丟棄的來源副本實際載入及套用 DWS、儲存，再由獨立 Core Console 對驗證副本清理仍存在的核准來源層，最後由另一個新程序重開驗證。通過後才提供 DWS 與驗證報告；可用 AutoCAD `LAYTRANS → Load` 載入。此選配不支援逐物件例外，DXF 也不提供 DWS。失敗時保留已驗證主 DWG，並顯示「DWG 已完成、DWS 未產生」。
 
 ## 命令列操作
 
@@ -163,7 +163,7 @@ python scripts/run.py convert --source input.dwg --inventory scan-job/inventory.
 - `0`、`DEFPOINTS` 與 XREF dependent layers 只能保留。
 - 不自動分解圖塊，不強制將物件 override 改為 ByLayer。
 - DWG 可處理可編輯圖塊定義；DXF writer 不修改圖塊定義。
-- DWG 驗證涵蓋物件、非圖層簽章及目標層屬性。AutoCAD 再生的 `*D` 尺寸快取採獨立驗證規則，詳見[原生 adapter](src/dwg-layer-standardizer/integrations/autocad-2026-native/README.md)。
+- DWG 驗證涵蓋具權威性的物件 handle、圖層、型別、數量、非圖層簽章及目標層屬性；其中包含尺寸擁有者 `Dimension`。AutoCAD 再生的 `*D` 尺寸顯示快取不作為權威資料，重開驗證不逐一開啟，以避開 AutoCAD 2026 在大型圖面上的原生崩潰；詳見[原生 adapter](src/dwg-layer-standardizer/integrations/autocad-2026-native/README.md)。
 - 映射不完整、來源變更、線型缺少、CAD 執行錯誤或回讀不符會停止；未通過驗證的 DWG 輸出會移除。
 - 本工具處理圖層標準化，輸出仍需依專案要求進行 CAD 專業檢查。
 
@@ -185,7 +185,7 @@ src/dwg-layer-standardizer/
 - [貢獻指南](CONTRIBUTING.md)
 - [發布文案與準備事項](docs/GITHUB_RELEASE.md)
 
-公開預覽包不附內部 `tools/` 測試與維護腳本。已安裝 skill 的同步需要含對應測試的完整開發副本，設定與邊界請見操作手冊。
+本版原始碼包包含 `tools/` 測試腳本及 `tools/git-hooks` 的三個同步 hooks。自動同步另需 Git checkout；ZIP 獨立執行請使用快速開始的 uvicorn 入口。舊 preview.3 缺少三個 hooks，造成兩項同步測試失敗；本版已補齊。
 
 ## 授權
 
